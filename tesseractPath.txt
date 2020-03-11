@@ -1,0 +1,18 @@
+
+Paste the full path to your Tesseract executable on the line above. It must be the first line of this file, and contain no extra characters.
+
+Refer to the guide for instructions on how to install Tesseract. If you have installed it successfully, but are not sure where the executable is located, try the following:
+
+On MacOS or Linux:
+In Terminal, paste:
+
+which tesseract
+
+Copy and paste the resulting line in the first line of this file.
+
+On Windows, newer than XP:
+In Command Prompt, paste:
+
+where tesseract.exe
+
+Copy and paste the resulting line in the first line of this file.
