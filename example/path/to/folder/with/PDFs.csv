@@ -1,0 +1,3 @@
+Source File,Page,Word Count,Text
+example/path/to/folder/with/PDFs/machine readable example.pdf,1,32,"This is an example of a machine readable PDF file. If you search for these words, you can find them on the page. If you try to highlight the words, you can!"
+example/path/to/folder/with/PDFs/non machine readable example.pdf,1,59,"This is an example of a non-machine readable PDF file. If you search for these words, you cannot find them on the page, even though you know they are here! If you try to highlight the words, you will likely highlight the entire page, or nothing at all. This page takes much longer to process than machine readable pages."
