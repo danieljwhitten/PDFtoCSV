@@ -317,16 +317,16 @@ class PDFtoCSV:
                 fileTime = round(fileEndTime - self.fileStartTime, 3)
                 if not self.args.quiet or self.inputType != "dir":
                     print("Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(self.filename, fileTime, len(self.pdf), plural, self.totalWordCount, round(fileTime/len(self.pdf),3)))
-                if self.skippedPages:
+                if self.skippedPages and not self.args.quiet:
                     print("Some pages were skipped because you chose Accelerated Mode. See Guide for details.")
        
         if not self.args.quiet:
             if stage == "ocr":  # Explain to the user that we are now dealing with OCR and why
                 if self.args.thorough:
-                    reason = "Thorough Mode has been chosen, see Guide for details"
+                    reason = "Thorough Mode has been chosen, see Guide for details."
                 else:
-                    reason = "it contains non-machine readable text"
-                print("\rThis file is being processed with OCR because {} (This may take a few seconds per page).".format(reason))
+                    reason = "it contains non-machine readable text."
+                print("\rThis file is being processed with OCR because {} \n(This may take a few seconds per page)".format(reason))
 
             if stage == "page":
                 if self.pageNum >= self.percent:    # If we passed the next percentage marker, set a new one
