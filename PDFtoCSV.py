@@ -6,16 +6,20 @@ import csv
 import time
 import sys
 import unidecode
+import argparse
 from natsort import natsorted
 from subprocess import run
 from shutil import rmtree
 
 """ A class with the tools to translate a set of PDF files into a single CSV file using embedded text and OCR"""
 class PDFtoCSV:
+    
     # START STARTUP BLOCK
-    def __init__(self, inputFilePath):
+    def __init__(self):
 
-        self.inputFilePath = inputFilePath
+        self.arguments()
+
+        self.inputFilePath = self.args.filepath
 
         # Identify the execution path right away
         self.homePath = os.path.dirname(os.path.realpath(__file__))
@@ -150,6 +154,7 @@ class PDFtoCSV:
     def processFile(self, filePath):
         self.filename = os.path.basename(filePath)
         self.pdf = fitz.open(filePath)   # Open the PDF with MuPDF
+        self.skippedPages = False   # Reset
         self.dialog("fileStart")
         
         pages = list()
@@ -191,11 +196,15 @@ class PDFtoCSV:
     def readPage(self, page):
         # try to extract text
         text = page.getText()
-        if len(text) < 1:   # OCR the page if there is no text
-            text = self.ocrPage(page)
-            if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
-                self.dialog("ocr")
-            self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
+
+        if len(text) < 1 or self.args.thorough:   # OCR the page if there is no text or if forced
+            if self.args.accelerated:  # Skip if Accelerated option active
+                self.skippedPages = True
+            else:
+                text = self.ocrPage(page)
+                if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
+                    self.dialog("ocr")
+                self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
         text = self.cleanText(text) # Pass text through text cleaning processes
         return text
 
@@ -288,7 +297,8 @@ class PDFtoCSV:
                 dirTime = round(dirTimeEnd-self.dirTimeStart, 3)  # Calculate processing time
                 print()
                 print("The file {} contains all of the text extracted from all PDF files in {}".format(self.outputPath, self.inputFilePath))
-                print("{} file{} ({} words) were processed in {} seconds. That is an average of {} seconds/file".format(len(self.pathList), plural, self.completeWordCount, dirTime, round(dirTime/len(self.pathList),3)))
+                if not self.args.quiet:
+                    print("{} file{} ({} words) were processed in {} seconds. That is an average of {} seconds/file".format(len(self.pathList), plural, self.completeWordCount, dirTime, round(dirTime/len(self.pathList),3)))
         
         if stage[:4] == "file":    # The dialog relates to the processing of the file
             if len(self.pdf) == 1:  # Determine plural ending
@@ -296,33 +306,77 @@ class PDFtoCSV:
             else:
                 plural = "s"
             if stage == "fileStart":    # File start dialogue
-                print ()
-                print("Processing {} ({} page{})".format(self.filename,len(self.pdf),plural))
-                print("Progress: 0%|", end="", flush=True)  # Set up progress bar
+                if not self.args.quiet:
+                    print ()
+                    print("Processing {} ({} page{})".format(self.filename,len(self.pdf),plural))
+                    if not self.args.verbose:
+                        print("Progress: 0%|", end="", flush=True)  # Set up progress bar
                 self.fileStartTime = time.perf_counter()    # Record file start time
             elif stage == "fileEnd":    # File completed dialogue
                 fileEndTime = time.perf_counter()   # Record file end time
                 fileTime = round(fileEndTime - self.fileStartTime, 3)
-                print("Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(self.filename, fileTime, len(self.pdf), plural, self.totalWordCount, round(fileTime/len(self.pdf),3)))
+                if not self.args.quiet or self.inputType != "dir":
+                    print("Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(self.filename, fileTime, len(self.pdf), plural, self.totalWordCount, round(fileTime/len(self.pdf),3)))
+                if self.skippedPages:
+                    print("Some pages were skipped because you chose Accelerated Mode. See Guide for details.")
+       
+        if not self.args.quiet:
+            if stage == "ocr":  # Explain to the user that we are now dealing with OCR and why
+                if self.args.thorough:
+                    reason = "Thorough Mode has been chosen, see Guide for details"
+                else:
+                    reason = "it contains non-machine readable text"
+                print("\rThis file is being processed with OCR because {} (This may take a few seconds per page).".format(reason))
 
-        if stage == "ocr":  # Explain to the user that we are now dealing with OCR
-            print("\rThis file contains pages without machine-readable text, attempting to process (This may take a few seconds per page).")
-
-        if stage == "page":
-            if self.pageNum >= self.percent:    # If we passed the next percentage marker, set a new one
-                self.percent = self.percent + self.fivePercent
-            if self.fileMethod == "ocr":    # Because OCR takes longer, give an update of time and words after each page
-                print("\rRead {} words from page {}/{} in {} seconds        ".format(self.pageWordCount, self.pageNum+1, len(self.pdf), round(time.perf_counter()-self.pageStart,3)), end="", flush=True)
-            else:   # For text, just update the progress bar
-                if self.pageNum >= self.percent:    # If we passed the next percentage marker, print a marker set a new one
-                    print("=", end="", flush=True)
+            if stage == "page":
+                if self.pageNum >= self.percent:    # If we passed the next percentage marker, set a new one
                     self.percent = self.percent + self.fivePercent
-            if self.pageNum+1 == len(self.pdf): # If we are at the end of the file, ensure there is a full progress bar
-                print("\rProgress: 0%|====================|100%                ")
+                if self.fileMethod == "ocr" or self.args.verbose:    # Because OCR takes longer, give an update of time and words after each page
+                    if self.args.verbose:
+                        lead = ""
+                        rtn = "\n"
+                    else:
+                        lead = "\r"
+                        rtn = ""
+                    print("{}Read {} words from page {}/{} in {} seconds        ".format(lead,self.pageWordCount, self.pageNum+1, len(self.pdf), round(time.perf_counter()-self.pageStart,3)), end=rtn, flush=True)
+                else:   # For text, just update the progress bar
+                    if self.pageNum >= self.percent:    # If we passed the next percentage marker, print a marker set a new one
+                        print("=", end="", flush=True)
+                        self.percent = self.percent + self.fivePercent
+                if self.pageNum+1 == len(self.pdf) and not self.args.verbose: # If we are at the end of the file, ensure there is a full progress bar
+                    print("\rProgress: 0%|====================|100%                ")
 
     # Error dialog
     def errorFound(self, e):
         print("Sorry! There's been a problem. {} and try again.".format(e.strerror))
 
-test = PDFtoCSV(sys.argv[1])
+    # Argument processing
+    def arguments(self):
+
+        # Initialize parser
+        parser = argparse.ArgumentParser()
+        
+        # Require path argument
+        parser.add_argument("filepath", help="The path to the file or folder you would like to process. Must be verbatim and enclosed in quotes. See guide for details.")
+
+        # Arguments that augment the speed of the program
+        speedGroup = parser.add_mutually_exclusive_group()
+        # Accelerated (Ignore OCR pages)
+        speedGroup.add_argument("-a", "--accelerated", help="Ignore any pages that require time-consuming OCR to process. The program will run very quickly, but might miss some text, depending on your source file formats.", action="store_true")
+        # Thorough (OCR all pages)
+        speedGroup.add_argument("-t", "--thorough", help="Force Optical Character Recognition (OCR) for all pages. This will be much slower than the default option, but is the most thorough.", action="store_true")
+
+        # Arguments related to progress output
+        progressGroup = parser.add_mutually_exclusive_group()
+        # Quiet Mode (no progress updates)
+        progressGroup.add_argument("-q", "--quiet", help="Supress progress updates about individual files. There can be a long period of time with no progress updates as the progam runs.", action="store_true")
+        # Verbose Mode (progress update per page)
+        progressGroup.add_argument("-v", "--verbose", help="Show detailed progress updates for each page. This can result in a lot of progress updates for larger files.", action="store_true")
+
+        # Parse all args
+        self.args = parser.parse_args()
+
+
+
+test = PDFtoCSV()
 test.run()

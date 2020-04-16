@@ -1,0 +1,27 @@
+Short-Term (29 hours)
+x Only get embedded text, ignore OCR
+x force OCR for all pages
+x format as module so output can be fed into other python programs
+- customize columns for CSV
+- only get text from certain pages
+- Output as either one file per input file or one large file combined
+x Surpress progress text
+x Give page-by-page progress
+
+Medium-Term (58 hours)
+- Group output by blocks of text on page
+- Return only list of words per page or per file, and counts
+- option for heavy text cleaning (all optional)
+    - connect split words
+    - split merged words
+    - remove all punctuation
+    - remove all words not in dictionary
+
+Long-Term (116 hours)
+- autocorrect words not in dictionary
+- Custom dictionary options for text cleaning
+- Use existing tools to clean and adjust input OCR files to get a better output
+- Option for multiprocessing to improve performance
+- Check words against google n-grams instead of internal dictionary
+- Output new pdf with embedded text from OCR
+- Support for languages other than English
