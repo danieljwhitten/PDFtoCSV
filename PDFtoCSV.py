@@ -123,11 +123,13 @@ class PDFtoCSV:
         
         self.outputPath = self.createOutput(self.inputFilePath) # Create the output file
         self.completeWordCount = 0  # To keep track of all the words processed
+        self.completePageCount = 0 # To keep track of all pages processed
         self.dialog("start") # Print starting dialog
         for path in self.pathList:
             self.completeWordCount += self.processFile(path) # Process file and update wordcount
         self.dialog("end") # Print ending dialogue
-        
+
+
     # Crete a CSV file for the output, given the same name as the input path, and in the same location
     def createOutput(self, path):
 
@@ -146,7 +148,12 @@ class PDFtoCSV:
         # Create blank file with headers
         with open(os.path.join(outputDir,outputFilename), "w+", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
-            outputCSVWriter.writerow(["Source File", "Page", "Word Count", "Text"])
+            headers = self.args.fields
+            while headers.count("Custom Text") > 0:
+                i = headers.index("Custom Text")
+                headers.remove("Custom Text")
+                headers.insert(i,self.args.customTitle)
+            outputCSVWriter.writerow(headers)
         
         return outputPath
     
@@ -169,17 +176,31 @@ class PDFtoCSV:
         for page in self.pdf:   # process one page at a time
             self.pageStart = time.perf_counter()    # Record time page started (OCR pages can take a long time)
             self.pageNum = page.number
+            self.completePageCount += self.pageNum+1
 
             csvLine = list()
 
             # Get the text and word count from the page
             pageText = self.readPage(page) 
             self.pageWordCount = len(pageText.split())
+            self.totalWordCount += self.pageWordCount # Update total file word count
+            self.pageEnd = time.perf_counter()  # Record time page ends
+            self.pageTime = self.pageEnd-self.pageStart
 
-            csvLine = [filePath, self.pageNum+1, self.pageWordCount, pageText] # Build the output
+            customData = re.sub("#", f"{self.pageNum+1}", self.args.customContent)
+            customData = re.sub("\$", f"{self.completePageCount}", customData)
+            customData = re.sub("@", self.filename, customData)
+
+            data = {"Source File Path" : filePath, "Source File Name" : self.filename, "Page Number (File)" : self.pageNum+1, 
+                                "Page Number (Overall)" : self.completePageCount, "Page Word Count" : self.pageWordCount, 
+                                "Page Processing Duration" : f"{round(self.pageTime,3)} sec.", "Page Text" : pageText, "Process Timestamp" : time.asctime(),
+                                self.args.customTitle : customData}
+
+            csvLine = list() # Build the output
+            for f in self.args.fields:
+                csvLine.append(data[f])
             pages.append(csvLine) # Add it to the list of page outputs for the file
             
-            self.totalWordCount += self.pageWordCount # Update total file word count
             self.dialog("page") # Update progress dialog
         
         # Add each page from processed file to the output CSV as 1 line
@@ -373,9 +394,29 @@ class PDFtoCSV:
         # Verbose Mode (progress update per page)
         progressGroup.add_argument("-v", "--verbose", help="Show detailed progress updates for each page. This can result in a lot of progress updates for larger files.", action="store_true")
 
+        fieldGroup = parser.add_argument_group("Field Options", "This mode allows for the customization of the fields used for the CSV columns. See Guide for usage and syntax.")
+        
+        class FieldAction(argparse.Action):
+            def __call__(self, parser, namespace, values, option_string=None):
+                fields = dict(p="Source File Path", n="Source File Name", f="Page Number (File)", 
+                                o="Page Number (Overall)", w="Page Word Count",d="Page Processing Duration", 
+                                t="Page Text", s="Process Timestamp", c="Custom Text")
+                outputFields = list()
+                fieldString = re.sub(r"[^pnfowdtsc]","",values.lower())
+                if len(fieldString) < 1:
+                    print("No valid fields selected. Please refer to the Guide for help on using this function. Default fields will be used.")
+                    fieldString = "pfwt"
+                for c in fieldString:
+                    outputFields.append(fields[c])           
+                setattr(namespace, self.dest, outputFields)     
+
+        fieldGroup.add_argument("-f", "--fields", help="The string of letters representing the fields required in the order desired. See Guide for details", default=['Source File Path', 'Page Number (File)', 'Page Word Count', 'Page Text'], action=FieldAction)
+        customGroup = parser.add_argument_group("Custom Feild", "These options allow for the creation of a custom field in the CSV output. The indicator 'c' must be included in the field string for this field to be included. See Guide for details.")
+        customGroup.add_argument("-ct", "--customTitle", help="Title of custom field. Default title is 'Custom' if not specified.", default="Custom")
+        customGroup.add_argument("-cc", "--customContent", help="Content of custom field to be repeated for each page. Include @ for file name, # for file page number and $ for overall page number. Default is a blank cell if not specified.", default="")
+        
         # Parse all args
         self.args = parser.parse_args()
-
 
 
 test = PDFtoCSV()
