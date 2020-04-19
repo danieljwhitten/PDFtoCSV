@@ -2,9 +2,9 @@ Short-Term (29 hours)
 x Only get embedded text, ignore OCR
 x force OCR for all pages
 x format as module so output can be fed into other python programs
-- customize columns for CSV
-- only get text from certain pages
-- Output as either one file per input file or one large file combined
+x customize columns for CSV
+x only get text from certain pages
+x Output as either one file per input file or one large file combined
 x Surpress progress text
 x Give page-by-page progress
 

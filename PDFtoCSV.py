@@ -121,14 +121,14 @@ class PDFtoCSV:
     # Process the files
     def run(self):
         
-        self.outputPath = self.createOutput(self.inputFilePath) # Create the output file
+        if not self.args.split:
+            self.outputPath = self.createOutput(self.inputFilePath) # Create the output file
         self.completeWordCount = 0  # To keep track of all the words processed
         self.completePageCount = 0 # To keep track of all pages processed
         self.dialog("start") # Print starting dialog
         for path in self.pathList:
             self.completeWordCount += self.processFile(path) # Process file and update wordcount
         self.dialog("end") # Print ending dialogue
-
 
     # Crete a CSV file for the output, given the same name as the input path, and in the same location
     def createOutput(self, path):
@@ -160,6 +160,10 @@ class PDFtoCSV:
     # Process each file in its entirety
     def processFile(self, filePath):
         self.filename = os.path.basename(filePath)
+
+        if self.args.split:
+            self.outputPath = self.createOutput(filePath)
+
         self.pdf = fitz.open(filePath)   # Open the PDF with MuPDF
         self.skippedPages = False   # Reset
         self.dialog("fileStart")
@@ -176,33 +180,43 @@ class PDFtoCSV:
         for page in self.pdf:   # process one page at a time
             self.pageStart = time.perf_counter()    # Record time page started (OCR pages can take a long time)
             self.pageNum = page.number
-            self.completePageCount += self.pageNum+1
-
-            csvLine = list()
-
-            # Get the text and word count from the page
-            pageText = self.readPage(page) 
-            self.pageWordCount = len(pageText.split())
-            self.totalWordCount += self.pageWordCount # Update total file word count
-            self.pageEnd = time.perf_counter()  # Record time page ends
-            self.pageTime = self.pageEnd-self.pageStart
-
-            customData = re.sub("#", f"{self.pageNum+1}", self.args.customContent)
-            customData = re.sub("\$", f"{self.completePageCount}", customData)
-            customData = re.sub("@", self.filename, customData)
-
-            data = {"Source File Path" : filePath, "Source File Name" : self.filename, "Page Number (File)" : self.pageNum+1, 
-                                "Page Number (Overall)" : self.completePageCount, "Page Word Count" : self.pageWordCount, 
-                                "Page Processing Duration" : f"{round(self.pageTime,3)} sec.", "Page Text" : pageText, "Process Timestamp" : time.asctime(),
-                                self.args.customTitle : customData}
-
-            csvLine = list() # Build the output
-            for f in self.args.fields:
-                csvLine.append(data[f])
-            pages.append(csvLine) # Add it to the list of page outputs for the file
             
-            self.dialog("page") # Update progress dialog
-        
+            if len(self.args.pages) == 0 or self.pageNum+1 in self.args.pages:  # Process unless not a specified page
+                self.completePageCount += 1
+
+                csvLine = list()
+
+                # Get the text and word count from the page
+                pageText = self.readPage(page) 
+                self.pageWordCount = len(pageText.split())
+                self.totalWordCount += self.pageWordCount # Update total file word count
+                self.pageEnd = time.perf_counter()  # Record time page ends
+                self.pageTime = self.pageEnd-self.pageStart
+
+                customData = re.sub("#", f"{self.pageNum+1}", self.args.customContent)
+                customData = re.sub("\$", f"{self.completePageCount}", customData)
+                customData = re.sub("@", self.filename, customData)
+
+                data = {"Source File Path" : filePath, "Source File Name" : self.filename, "Page Number (File)" : self.pageNum+1, 
+                                    "Page Number (Overall)" : self.completePageCount, "Page Word Count" : self.pageWordCount, 
+                                    "Page Processing Duration" : f"{round(self.pageTime,3)} sec.", "Page Text" : pageText, "Process Timestamp" : time.asctime(),
+                                    self.args.customTitle : customData}
+
+                csvLine = list() # Build the output
+                for f in self.args.fields:
+                    csvLine.append(data[f])
+                pages.append(csvLine) # Add it to the list of page outputs for the file
+                self.dialog("page") # Update progress dialog
+                
+                
+            else:
+                self.skippedPages = True
+                self.pageWordCount = 0
+                self.dialog("pageskip")
+
+            
+
+
         # Add each page from processed file to the output CSV as 1 line
         with open(self.outputPath, "a", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
@@ -336,10 +350,18 @@ class PDFtoCSV:
             elif stage == "fileEnd":    # File completed dialogue
                 fileEndTime = time.perf_counter()   # Record file end time
                 fileTime = round(fileEndTime - self.fileStartTime, 3)
+                if len(self.args.pages) > 0:
+                    pagesProcessed = len(self.args.pages)
+                else:
+                    pagesProcessed = len(self.pdf)
                 if not self.args.quiet or self.inputType != "dir":
-                    print("Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(self.filename, fileTime, len(self.pdf), plural, self.totalWordCount, round(fileTime/len(self.pdf),3)))
+                    print("Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(self.filename, fileTime, pagesProcessed, plural, self.totalWordCount, round(fileTime/pagesProcessed,3)))
                 if self.skippedPages and not self.args.quiet:
-                    print("Some pages were skipped because you chose Accelerated Mode. See Guide for details.")
+                    if self.args.accelerated:
+                        reason = "Accellerated Mode"
+                    if len(self.args.pages) > 0:
+                        reason = "to only process certain pages"
+                    print("Some pages were skipped because you chose {}. See Guide for details.".format(reason))
        
         if not self.args.quiet:
             if stage == "ocr":  # Explain to the user that we are now dealing with OCR and why
@@ -349,7 +371,7 @@ class PDFtoCSV:
                     reason = "it contains non-machine readable text."
                 print("\rThis file is being processed with OCR because {} \n(This may take a few seconds per page)".format(reason))
 
-            if stage == "page":
+            if stage[:4] == "page":
                 if self.pageNum >= self.percent:    # If we passed the next percentage marker, set a new one
                     self.percent = self.percent + self.fivePercent
                 if self.fileMethod == "ocr" or self.args.verbose:    # Because OCR takes longer, give an update of time and words after each page
@@ -359,7 +381,10 @@ class PDFtoCSV:
                     else:
                         lead = "\r"
                         rtn = ""
-                    print("{}Read {} words from page {}/{} in {} seconds        ".format(lead,self.pageWordCount, self.pageNum+1, len(self.pdf), round(time.perf_counter()-self.pageStart,3)), end=rtn, flush=True)
+                    if len(stage) == 4:
+                        print("{}Read {} words from page {}/{} in {} seconds        ".format(lead,self.pageWordCount, self.pageNum+1, len(self.pdf), round(time.perf_counter()-self.pageStart,3)), end=rtn, flush=True)
+                    else:
+                        print("{}Page {}/{} skipped as it was not among those specified.    ".format(lead, self.pageNum+1, len(self.pdf)), end=rtn, flush=True)
                 else:   # For text, just update the progress bar
                     if self.pageNum >= self.percent:    # If we passed the next percentage marker, print a marker set a new one
                         print("=", end="", flush=True)
@@ -415,6 +440,23 @@ class PDFtoCSV:
         customGroup.add_argument("-ct", "--customTitle", help="Title of custom field. Default title is 'Custom' if not specified.", default="Custom")
         customGroup.add_argument("-cc", "--customContent", help="Content of custom field to be repeated for each page. Include @ for file name, # for file page number and $ for overall page number. Default is a blank cell if not specified.", default="")
         
+        class PageAction(argparse.Action):
+            def __call__(self, parser, namespace, values, option_string=None):
+                pages = list()
+                for p in values:
+                    p = re.sub(r"[^0-9\-]","", p)
+                    if "-" in p:
+                        rng = range(int(p.split("-")[0]),int(p.split("-")[1])+1)
+                        for i in rng:
+                            pages.append(i)
+                    elif len(p) > 0:
+                        pages.append(int(p))
+                setattr(namespace, self.dest, pages)
+
+        parser.add_argument("-p", "--pages", help="Only retrieve text from specified pages. List individual page numbers or page ranges in the format 1-10.", nargs="+", action=PageAction, default=[])
+
+        parser.add_argument("-s", "--split", help="Create a separate output CSV for every PDF file instead of the default of one comprehensive output CSV.", action = "store_true")
+
         # Parse all args
         self.args = parser.parse_args()
 
