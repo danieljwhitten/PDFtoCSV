@@ -7,6 +7,7 @@ import time
 import sys
 import unidecode
 import argparse
+import math
 from natsort import natsorted
 from subprocess import run
 from shutil import rmtree
@@ -290,12 +291,41 @@ class PDFtoCSV:
             else:
                 stats[w] = 1
 
-        sortedStats = {}
+        count = 0
+        for c in stats.items():
+            count += c[1]
 
-        if self.args.reportSort:
-            sortedStats = [(word,count) for (word, count) in sorted(stats.items(),reverse= True, key=lambda x: x[1])]
+        sortedStats = [(word,count) for (word, count) in sorted(stats.items(),reverse= True, key=lambda x: x[1])]
+
+
+        trimmedStats = {}
+
+        limit = re.sub(r"[^0-9%]", "", self.args.reportLimit)
+        if len(limit) < 1 or ("%" in limit and len(limit) < 2):
+            limit = "100%"
+
+        if limit[-1] == "%":
+            percentile = int(re.sub(r"[^0-9]", "", limit))
+            if percentile > 100:
+                percentile = 100
+            cieling  = math.ceil((percentile/100) * count)
+
+            counter = 0
+            for w in sortedStats:
+                counter += w[1]
+                if counter <= cieling or counter == w[1]:
+                    trimmedStats[w[0]]=w[1]            
+
         else:
-            sortedStats = [(word,count) for (word, count) in sorted(stats.items())]
+            cieling = int(re.sub(r"[^0-9]", "", limit))
+            for w in sortedStats:
+                if w[1] >= cieling:
+                    trimmedStats[w[0]]=w[1]
+
+        if not self.args.reportSort:
+            trimmedStats = [(word,count) for (word, count) in sorted(trimmedStats.items())]
+
+
         with open(self.reportPath, "a", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
             if self.args.report and not self.args.split:
@@ -306,8 +336,8 @@ class PDFtoCSV:
             if self.args.reportPage:
                 outputCSVWriter.writerow(["{} page {}/{}".format(self.filename, self.pageNum+1, len(self.pdf))])
             outputCSVWriter.writerow(["Word","Instances"])
-            for w in sortedStats:
-                outputCSVWriter.writerow(w)
+            for w in trimmedStats:
+                outputCSVWriter.writerow([w,trimmedStats[w]])
         self.reportText = ""
 
     # Strip unneceesary whitespace
@@ -508,7 +538,7 @@ class PDFtoCSV:
         reportGroupDetails.add_argument("-rp", "--reportPage", help="Create a separate report for each page.", action="store_true")
         reportGroupDetails.add_argument("-rf", "--reportFile", help="Create a separate report for each file.", action="store_true")
         reportGroup.add_argument("-rs", "--reportSort", help="Sort the words by frequency in the report instead of alphabetically.", action="store_true")
-        reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent absolute frequency, numbers with a percentage represent the upper given percentile.", default="100%")
+        reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent minimum frequency, numbers with a percentage represent the upper given percentile.", default="100%")
 
         # Parse all args
         self.args = parser.parse_args()
