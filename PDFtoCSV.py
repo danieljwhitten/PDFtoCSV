@@ -322,8 +322,11 @@ class PDFtoCSV:
                 if w[1] >= cieling:
                     trimmedStats[w[0]]=w[1]
 
+        finalStats = list()
         if not self.args.reportSort:
-            trimmedStats = [(word,count) for (word, count) in sorted(trimmedStats.items())]
+            finalStats = [(word, count) for (word,count) in sorted(trimmedStats.items())]
+        else:
+            finalStats = trimmedStats.items()
 
 
         with open(self.reportPath, "a", newline='') as outputFile:
@@ -336,8 +339,8 @@ class PDFtoCSV:
             if self.args.reportPage:
                 outputCSVWriter.writerow(["{} page {}/{}".format(self.filename, self.pageNum+1, len(self.pdf))])
             outputCSVWriter.writerow(["Word","Instances"])
-            for w in trimmedStats:
-                outputCSVWriter.writerow([w,trimmedStats[w]])
+            for w in finalStats:
+                outputCSVWriter.writerow(w)
         self.reportText = ""
 
     # Strip unneceesary whitespace

@@ -13,7 +13,7 @@ Medium-Term (58 hours)
 x Return only list of words per page or per file, and counts
     x Create frequency reports for total, file, and page
     x Sort alphabetically or by frequency
-    - Only include words above a certain frequency
+    x Only include words above a certain frequency
     - Only count some words
     - Do not count other words
         - Default do not count list (conjunctions, pronouns, etc.)
