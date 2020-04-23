@@ -286,14 +286,10 @@ class PDFtoCSV:
         text = re.sub(r"\B'|'\B", "", text)
         text = re.sub(r"\B\-|\-\B", "", text)
         
-        if len(self.args.reportOnly) > 0:
-            if os.path.isfile(self.args.reportOnly[0]):
-                with open(self.args.reportOnly[0], "r") as reportOnlyFile:
-                    patterns = [pattern.strip() for pattern in reportOnlyFile if pattern[0] != "#"]
-            else:
-                patterns = self.args.reportOnly
-
-            print(patterns)
+        if self.args.reportOnly is not None:
+            if len(self.args.reportOnly) < 1:
+                self.args.reportOnly.append(os.path.join(self.homePath, "options", "ReportOnly.txt"))
+            patterns = self.getPattern(self.args.reportOnly)
 
             oldText = text
             text = ""
@@ -301,6 +297,22 @@ class PDFtoCSV:
                 for pattern in patterns:
                     if re.fullmatch(r"{}".format(pattern),word):
                         text += word + " "
+
+
+        if self.args.reportIgnore is not None:
+            if len(self.args.reportIgnore) < 1:
+                self.args.reportIgnore.append(os.path.join(self.homePath, "options", "ReportIgnore.txt"))
+            patterns = self.getPattern(self.args.reportIgnore)
+
+            oldText = text
+            text = ""
+            for word in oldText.split():
+                match = False
+                for pattern in patterns:
+                    if re.fullmatch(r"{}".format(pattern),word):
+                        match = True
+                if not match:
+                    text += word + " "
 
         for w in text.split():
             if w in stats:
@@ -359,6 +371,17 @@ class PDFtoCSV:
             for w in finalStats:
                 outputCSVWriter.writerow(w)
         self.reportText = ""
+
+    def getPattern(self, patternList):
+        if os.path.isfile(patternList[0]):
+                with open(patternList[0], "r") as reportOnlyFile:
+                    patterns = [pattern.strip() for pattern in reportOnlyFile if pattern[0] != "#"]
+        else:
+            patterns = patternList
+
+        if len(patterns) < 1:
+            patterns.append(r"\w*")
+        return patterns
 
     # Strip unneceesary whitespace
     def stripWhite(self, text):
@@ -559,8 +582,9 @@ class PDFtoCSV:
         reportGroupDetails.add_argument("-rf", "--reportFile", help="Create a separate report for each file.", action="store_true")
         reportGroup.add_argument("-rs", "--reportSort", help="Sort the words by frequency in the report instead of alphabetically.", action="store_true")
         reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent minimum frequency, numbers with a percentage represent the upper given percentile.", default="100%")
-        reportGroup.add_argument("-ro", "--reportOnly", help="Report only specified words. Either list words here separated by a space, or add them in the file 'options/ReportOnly.txt' as per instructions in that file and the Guide.", nargs="+", default="")
-
+        reportWordLists = reportGroup.add_mutually_exclusive_group()
+        reportWordLists.add_argument("-ro", "--reportOnly", help="Report only specified words. Either list words here separated by a space, or modify the file 'options/ReportOnly.txt' as per instructions in that file and the Guide.", nargs="*")
+        reportWordLists.add_argument("-ri", "--reportIgnore", help="Report all words except specified words to ignore. By default ignores the 100 most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ReportIgnore.txt' as per instructions in that file and the Guide.", nargs="*")
 
         # Parse all args
         self.args = parser.parse_args()

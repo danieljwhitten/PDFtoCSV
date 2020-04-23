@@ -15,8 +15,8 @@ x Return only list of words per page or per file, and counts
     x Sort alphabetically or by frequency
     x Only include words above a certain frequency
     x Only count some words
-    - Do not count other words
-        - Default do not count list (conjunctions, pronouns, etc.)
+    x Do not count other words
+        x Default do not count list (conjunctions, pronouns, etc.)
 - option for heavy text cleaning (all optional)
     - connect split words
     - split merged words

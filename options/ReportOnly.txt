@@ -1,1 +1,2 @@
 # INSTRUCTIONS
+\w*ou\w*
