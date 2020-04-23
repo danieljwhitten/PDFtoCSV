@@ -285,6 +285,23 @@ class PDFtoCSV:
         text = re.sub(r"[^a-z '\-]", "", self.reportText.lower())
         text = re.sub(r"\B'|'\B", "", text)
         text = re.sub(r"\B\-|\-\B", "", text)
+        
+        if len(self.args.reportOnly) > 0:
+            if os.path.isfile(self.args.reportOnly[0]):
+                with open(self.args.reportOnly[0], "r") as reportOnlyFile:
+                    patterns = [pattern.strip() for pattern in reportOnlyFile if pattern[0] != "#"]
+            else:
+                patterns = self.args.reportOnly
+
+            print(patterns)
+
+            oldText = text
+            text = ""
+            for word in oldText.split():
+                for pattern in patterns:
+                    if re.fullmatch(r"{}".format(pattern),word):
+                        text += word + " "
+
         for w in text.split():
             if w in stats:
                 stats[w] += 1
@@ -542,6 +559,8 @@ class PDFtoCSV:
         reportGroupDetails.add_argument("-rf", "--reportFile", help="Create a separate report for each file.", action="store_true")
         reportGroup.add_argument("-rs", "--reportSort", help="Sort the words by frequency in the report instead of alphabetically.", action="store_true")
         reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent minimum frequency, numbers with a percentage represent the upper given percentile.", default="100%")
+        reportGroup.add_argument("-ro", "--reportOnly", help="Report only specified words. Either list words here separated by a space, or add them in the file 'options/ReportOnly.txt' as per instructions in that file and the Guide.", nargs="+", default="")
+
 
         # Parse all args
         self.args = parser.parse_args()
