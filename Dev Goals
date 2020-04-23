@@ -10,7 +10,13 @@ x Give page-by-page progress
 
 Medium-Term (58 hours)
 - Group output by blocks of text on page
-- Return only list of words per page or per file, and counts
+x Return only list of words per page or per file, and counts
+    x Create frequency reports for total, file, and page
+    x Sort alphabetically or by frequency
+    - Only include words above a certain frequency
+    - Only count some words
+    - Do not count other words
+        - Default do not count list (conjunctions, pronouns, etc.)
 - option for heavy text cleaning (all optional)
     - connect split words
     - split merged words

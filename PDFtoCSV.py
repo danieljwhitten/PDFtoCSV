@@ -121,13 +121,16 @@ class PDFtoCSV:
     # Process the files
     def run(self):
         
+        self.reportText = ""
         if not self.args.split:
-            self.outputPath = self.createOutput(self.inputFilePath) # Create the output file
+            self.createOutput(self.inputFilePath) # Create the output file
         self.completeWordCount = 0  # To keep track of all the words processed
         self.completePageCount = 0 # To keep track of all pages processed
         self.dialog("start") # Print starting dialog
         for path in self.pathList:
             self.completeWordCount += self.processFile(path) # Process file and update wordcount
+        if self.args.report and not self.args.split:
+            self.report()
         self.dialog("end") # Print ending dialogue
 
     # Crete a CSV file for the output, given the same name as the input path, and in the same location
@@ -143,10 +146,11 @@ class PDFtoCSV:
         # Give the output file the same name as the input path
         outputFilename = os.path.splitext(os.path.basename(path))[0] + ".csv"
 
-        outputPath = os.path.join(outputDir,outputFilename)
+        self.outputPath = os.path.join(outputDir,outputFilename)
+        self.reportPath = self.outputPath[:-4] + "-FR" + self.outputPath[-4:]
 
         # Create blank file with headers
-        with open(os.path.join(outputDir,outputFilename), "w+", newline='') as outputFile:
+        with open(self.outputPath, "w+", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
             headers = self.args.fields
             while headers.count("Custom Text") > 0:
@@ -155,14 +159,16 @@ class PDFtoCSV:
                 headers.insert(i,self.args.customTitle)
             outputCSVWriter.writerow(headers)
         
-        return outputPath
+        if self.args.report or self.args.reportFile or self.args.reportPage:
+            with open(self.reportPath, "w+", newline='') as outputFile:
+                outputCSVWriter = csv.writer(outputFile, dialect='excel')     
     
     # Process each file in its entirety
     def processFile(self, filePath):
         self.filename = os.path.basename(filePath)
 
         if self.args.split:
-            self.outputPath = self.createOutput(filePath)
+            self.createOutput(filePath)
 
         self.pdf = fitz.open(filePath)   # Open the PDF with MuPDF
         self.skippedPages = False   # Reset
@@ -193,6 +199,11 @@ class PDFtoCSV:
                 self.pageEnd = time.perf_counter()  # Record time page ends
                 self.pageTime = self.pageEnd-self.pageStart
 
+                if self.args.report or self.args.reportPage or self.args.reportFile:
+                    self.reportText += pageText
+                    if self.args.reportPage:
+                        self.report()
+            
                 customData = re.sub("#", f"{self.pageNum+1}", self.args.customContent)
                 customData = re.sub("\$", f"{self.completePageCount}", customData)
                 customData = re.sub("@", self.filename, customData)
@@ -214,13 +225,12 @@ class PDFtoCSV:
                 self.pageWordCount = 0
                 self.dialog("pageskip")
 
-            
-
-
         # Add each page from processed file to the output CSV as 1 line
         with open(self.outputPath, "a", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
             outputCSVWriter.writerows(pages)
+        if self.args.reportFile or (self.args.split and self.args.report):
+            self.report()
 
         self.dialog("fileEnd")  # Show user statistics for completed file
         self.pdf.close()    # Close the PDF
@@ -268,6 +278,37 @@ class PDFtoCSV:
         rmtree(imgPath) # Delete the temp folder for the pics
                 
         return text
+
+    def report(self):
+        stats = {}
+        text = re.sub(r"[^a-z '\-]", "", self.reportText.lower())
+        text = re.sub(r"\B'|'\B", "", text)
+        text = re.sub(r"\B\-|\-\B", "", text)
+        for w in text.split():
+            if w in stats:
+                stats[w] += 1
+            else:
+                stats[w] = 1
+
+        sortedStats = {}
+
+        if self.args.reportSort:
+            sortedStats = [(word,count) for (word, count) in sorted(stats.items(),reverse= True, key=lambda x: x[1])]
+        else:
+            sortedStats = [(word,count) for (word, count) in sorted(stats.items())]
+        with open(self.reportPath, "a", newline='') as outputFile:
+            outputCSVWriter = csv.writer(outputFile, dialect='excel')
+            if self.args.report and not self.args.split:
+                src = self.inputFilePath
+            else:
+                src = self.filename
+            outputCSVWriter.writerow(["Frequency Report of all words processed from {}".format(src)])   
+            if self.args.reportPage:
+                outputCSVWriter.writerow(["{} page {}/{}".format(self.filename, self.pageNum+1, len(self.pdf))])
+            outputCSVWriter.writerow(["Word","Instances"])
+            for w in sortedStats:
+                outputCSVWriter.writerow(w)
+        self.reportText = ""
 
     # Strip unneceesary whitespace
     def stripWhite(self, text):
@@ -331,7 +372,11 @@ class PDFtoCSV:
                 dirTimeEnd = time.perf_counter()   # Record ending time
                 dirTime = round(dirTimeEnd-self.dirTimeStart, 3)  # Calculate processing time
                 print()
-                print("The file {} contains all of the text extracted from all PDF files in {}".format(self.outputPath, self.inputFilePath))
+                if self.args.report or self.args.reportFile or self.args.reportPage:
+                    out = "a report on the frequency of each word"
+                else:
+                    out = "all of the text extracted"
+                print("The file {} contains {} from all PDF files in {}.".format(self.outputPath, out, self.inputFilePath))
                 if not self.args.quiet:
                     print("{} file{} ({} words) were processed in {} seconds. That is an average of {} seconds/file".format(len(self.pathList), plural, self.completeWordCount, dirTime, round(dirTime/len(self.pathList),3)))
         
@@ -404,7 +449,7 @@ class PDFtoCSV:
         
         # Require path argument
         parser.add_argument("filepath", help="The path to the file or folder you would like to process. Must be verbatim and enclosed in quotes. See guide for details.")
-
+        
         # Arguments that augment the speed of the program
         speedGroup = parser.add_mutually_exclusive_group()
         # Accelerated (Ignore OCR pages)
@@ -456,6 +501,14 @@ class PDFtoCSV:
         parser.add_argument("-p", "--pages", help="Only retrieve text from specified pages. List individual page numbers or page ranges in the format 1-10.", nargs="+", action=PageAction, default=[])
 
         parser.add_argument("-s", "--split", help="Create a separate output CSV for every PDF file instead of the default of one comprehensive output CSV.", action = "store_true")
+        
+        reportGroup = parser.add_argument_group("Report Mode", "Create a separate CSV with a report of frequency of each word present in the text.")
+        reportGroupDetails = reportGroup.add_mutually_exclusive_group()
+        reportGroupDetails.add_argument("-r", "--report", help="Create one report with cumulative counts for all words in all files. This will create a report per file if 'Split Mode' is also used.", action="store_true")
+        reportGroupDetails.add_argument("-rp", "--reportPage", help="Create a separate report for each page.", action="store_true")
+        reportGroupDetails.add_argument("-rf", "--reportFile", help="Create a separate report for each file.", action="store_true")
+        reportGroup.add_argument("-rs", "--reportSort", help="Sort the words by frequency in the report instead of alphabetically.", action="store_true")
+        reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent absolute frequency, numbers with a percentage represent the upper given percentile.", default="100%")
 
         # Parse all args
         self.args = parser.parse_args()
