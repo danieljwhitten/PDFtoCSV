@@ -1,9 +1,0 @@
-p - Source File Path
-n - Source File Name
-f - Page Number (File)
-o - Page Number (Overall)
-w - Page Word Count
-d - Page Processing Duration
-t - Page Text
-s - Process Timestamp
-c - Custom Text (# = File page, $ = Overall page, @ file name)

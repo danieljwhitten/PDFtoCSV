@@ -241,43 +241,83 @@ class PDFtoCSV:
     # Get the text from a single page
     def readPage(self, page):
         # try to extract text
-        text = page.getText()
+        if self.args.thorough:
+            text = self.thoroughPage(page)
+        else:
+            text = page.getText()
 
-        if len(text) < 1 or self.args.thorough:   # OCR the page if there is no text or if forced
-            if self.args.accelerated:  # Skip if Accelerated option active
-                self.skippedPages = True
-            else:
-                text = self.ocrPage(page)
-                if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
-                    self.dialog("ocr")
-                self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
+            if len(text) < 1:   # OCR the page if there is no text or if forced
+                if self.args.accelerated:  # Skip if Accelerated option active
+                    self.skippedPages = True
+                else:
+                    text = self.ocrPage(page)
+                    if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
+                        self.dialog("ocr")
+                    self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
         text = self.cleanText(text) # Pass text through text cleaning processes
         return text
 
-    # Read a page using OCR
-    def ocrPage(self, page):
-
-        # Create a temporary folder for the images used in OCR
-        imgPath = os.path.join(self.homePath,"tempImages")
+    def thoroughPage(self,page):
+        if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
+            self.dialog("ocr")
+        self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
+        blocks = page.getText("dict", 0)["blocks"]
+        imgList = page.getImageList(full=True)
+        for i in imgList:
+            imgBBox = page.getImageBbox(i)
+            self.tempImgPath()
+            imgDict = self.pdf.extractImage(i[0])
+            img = os.path.join(self.imgPath,"{}.{}".format(i[0], imgDict["ext"]))
+            imgout = open(img, "wb")
+            imgout.write(imgDict["image"])
+            imgout.close()
+            imgText = self.ocr(img)
+            if len(imgText) > 0 :
+                blocks.append({"type": 1, "bbox": imgBBox, "lines": [{"bbox":imgBBox, "spans": [{"bbox": imgBBox, "text":imgText}]}]})
         try:
-            os.mkdir(imgPath)
+            rmtree(self.imgPath)
+        except:
+            pass
+        spans = list()
+        for block in blocks:
+            for line in block["lines"]:
+                for span in line["spans"]:
+                    spans.append({"bbox":span["bbox"], "text":span["text"]})
+        text = ""
+        for s in spans:
+            text += s["text"]
+        return text
+
+    
+    def tempImgPath(self):
+        # Create a temporary folder for the images used in OCR
+        self.imgPath = os.path.join(self.homePath,"tempImages")
+        try:
+            os.mkdir(self.imgPath)
         except:
             pass
 
+    # Read a page using OCR
+    def ocrPage(self, page):
+        self.tempImgPath()
         zoomMatrix = fitz.Matrix(3.2,3.2)   # Set the optimal settings for OCR-readable images
-        pix = page.getPixmap(matrix=zoomMatrix, colorspace=fitz.csGRAY) # Generate pixmap from PDF page
-        img = os.path.join(imgPath,"page-%i.png" % page.number) # find image in pixmap
+        pix = page.getPixmap(matrix=zoomMatrix, colorspace=fitz.csGRAY, alpha=True) # Generate pixmap from PDF page
+        img = os.path.join(self.imgPath,"page-%i.png" % page.number) # find image in pixmap
         pix.writePNG(img)   # Grab image and save it
         
+        text = self.ocr(img)
+
+        rmtree(self.imgPath) # Delete the temp folder for the pics
+                
+        return text
+
+    def ocr(self, img):
         # Use tesseract to get text via OCR
         try:
             text = pytesseract.image_to_string(img, lang="eng", config="--psm 1")
         except:
             print("\rSorry! There appears to be an issue with your Tesseract OCR installation. Please refer to the instruction manual for more details.")
-            sys.exit(1)
-
-        rmtree(imgPath) # Delete the temp folder for the pics
-                
+            text = ""
         return text
 
     def report(self):
@@ -445,11 +485,14 @@ class PDFtoCSV:
                 dirTimeEnd = time.perf_counter()   # Record ending time
                 dirTime = round(dirTimeEnd-self.dirTimeStart, 3)  # Calculate processing time
                 print()
-                if self.args.report or self.args.reportFile or self.args.reportPage:
-                    out = "a report on the frequency of each word"
+                if not self.args.split:
+                    print("The file {} contains all of the text extracted from from all PDF files in {}.".format(self.outputPath, self.inputFilePath))
+                    if self.args.report or self.args.reportFile or self.args.reportPage:
+                        print("The file {} contains a frequency report of all words processed.".format(self.reportPath))
                 else:
-                    out = "all of the text extracted"
-                print("The file {} contains {} from all PDF files in {}.".format(self.outputPath, out, self.inputFilePath))
+                    print("Each file in {} has breen processed and the extracted text is contained in the accompanying CSV file.".format(self.inputFilePath))
+                    if self.args.report or self.args.reportFile or self.args.reportPage:
+                        print("Each file also contains an accompanying CSV file with a frequency report of each word processed.")
                 if not self.args.quiet:
                     print("{} file{} ({} words) were processed in {} seconds. That is an average of {} seconds/file".format(len(self.pathList), plural, self.completeWordCount, dirTime, round(dirTime/len(self.pathList),3)))
         

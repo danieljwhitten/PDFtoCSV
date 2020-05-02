@@ -9,15 +9,15 @@ x Surpress progress text
 x Give page-by-page progress
 
 Medium-Term (58 hours)
-- Group output by blocks of text on page
+- Group output by blocks of text on page (Merging with "Force OCR" as "Thorough Mode")
 x Return only list of words per page or per file, and counts
     x Create frequency reports for total, file, and page
     x Sort alphabetically or by frequency
     x Only include words above a certain frequency
     x Only count some words
     x Do not count other words
-        x Default do not count list (conjunctions, pronouns, etc.)
-- option for heavy text cleaning (all optional)
+        x Default do not count list (stop words)
+- option for heavy text cleaning (all optional) 
     - connect split words
     - split merged words
     - remove all punctuation
