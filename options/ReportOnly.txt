@@ -7,8 +7,13 @@
 # before your next project uses Report Only Mode again.
 #
 # Words should be listed here without spaces before or after, and with each
-# new word on a new line. Multi-word/phrases are not compatible with this function
-# at this time.
+# new word on a new line.
+#
+# Phrases can be included on one line. The program will only include instances of
+# the whole phrase. The frequency report will still count individual words.
+# For example, if the source text is "This is a test, this shows how phrases work."
+# and "this is" is added to this file, the program will only include instances of 
+# "this is" and give a count of "this: 1, is: 1".
 #
 # Words preceded by a hash (#) are ignored. These instructions can therefore be left
 # here without affecting the function of the program.

@@ -201,7 +201,7 @@ class PDFtoCSV:
                 self.pageTime = self.pageEnd-self.pageStart
 
                 if self.args.report or self.args.reportPage or self.args.reportFile:
-                    self.reportText += pageText
+                    self.reportText += pageText + " "
                     if self.args.reportPage:
                         self.report()
             
@@ -321,6 +321,7 @@ class PDFtoCSV:
         return text
 
     def report(self):
+        print(self.reportText)
         stats = {}
         text = re.sub(r"[^a-z '\-]", "", self.reportText.lower())
         text = re.sub(r"\B'|'\B", "", text)
@@ -333,10 +334,10 @@ class PDFtoCSV:
 
             oldText = text
             text = ""
-            for word in oldText.split():
-                for pattern in patterns:
-                    if re.fullmatch(r"{}".format(pattern),word):
-                        text += word + " "
+            for pattern in patterns:
+                matches  = re.findall(r"\b{}\b".format(pattern), oldText)
+                for match in matches:
+                    text += match + " "
 
 
         if self.args.reportIgnore is not None:
@@ -344,15 +345,8 @@ class PDFtoCSV:
                 self.args.reportIgnore.append(os.path.join(self.homePath, "options", "ReportIgnore.txt"))
             patterns = self.getPattern(self.args.reportIgnore)
 
-            oldText = text
-            text = ""
-            for word in oldText.split():
-                match = False
-                for pattern in patterns:
-                    if re.fullmatch(r"{}".format(pattern),word):
-                        match = True
-                if not match:
-                    text += word + " "
+            for pattern in patterns:
+                text = re.sub(r"\b{}\b".format(pattern), "", text)
 
         for w in text.split():
             if w in stats:
@@ -415,9 +409,9 @@ class PDFtoCSV:
     def getPattern(self, patternList):
         if os.path.isfile(patternList[0]):
                 with open(patternList[0], "r") as reportOnlyFile:
-                    patterns = [pattern.strip() for pattern in reportOnlyFile if pattern[0] != "#"]
+                    patterns = [pattern.strip().lower() for pattern in reportOnlyFile if pattern[0] != "#"]
         else:
-            patterns = patternList
+            patterns = [pattern.lower() for pattern in patternList]
 
         if len(patterns) < 1:
             patterns.append(r"\w*")
