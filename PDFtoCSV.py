@@ -321,7 +321,6 @@ class PDFtoCSV:
         return text
 
     def report(self):
-        print(self.reportText)
         stats = {}
         text = re.sub(r"[^a-z '\-]", "", self.reportText.lower())
         text = re.sub(r"\B'|'\B", "", text)
