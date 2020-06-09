@@ -240,6 +240,9 @@ class PDFtoCSV:
                     correctText = self.autocorrect(pageBlob)
                     pageText = correctText
 
+                if self.args.processLemmatize:
+                    pageText = self.lemmatize(pageText)
+
                 self.pageEnd = time.perf_counter()  # Record time page ends
                 self.pageTime = self.pageEnd-self.pageStart
 
@@ -575,6 +578,23 @@ class PDFtoCSV:
 
         return cleanText
 
+    def lemmatize(self, text):
+        blob = TextBlob(text)
+        text = ""
+        for w in blob.tags:
+            if w[1][:2] == "JJ":
+                pos = 'a'
+            elif "RB" in w[1]:
+                pos = 'r'
+            elif w[1][:2] == "VB":
+                pos = 'v'
+            else:
+                pos = 'n'
+            text += Word(w[0]).lemmatize(pos) + " "
+        return text.strip()
+            
+            
+
     # Various dialogues to keep the user informed of progress
     def dialog(self, stage):
 
@@ -753,6 +773,7 @@ To override a previous custom dictionary with a new one, use the 'Process Dictio
 Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise only the first word from each line will be added. Frequency count separated by a space can be added on the same line for improved performance.''', nargs="+", metavar="Words to Add")
         processGroup.add_argument("-pdrw", "--processDictionaryRemoveWord", help='''Remove specific word(s) from the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. 
 Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise the first word from each line will be removed.''', nargs="+", metavar="Words to Add")
+        processGroup.add_argument("-pl", "--processLemmatize", help="Lemmatize all words for both text output and Frequency Report if 'Report' option is used. This converts words into their base form for easier analysis. Eg., 'went' => 'go', 'leaves' = 'leaf', etc.", action="store_true")
         # Parse all args
         self.args = parser.parse_args()
 
