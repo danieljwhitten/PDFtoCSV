@@ -11,6 +11,10 @@ import math
 from natsort import natsorted
 from subprocess import run
 from shutil import rmtree
+from textblob import TextBlob
+from textblob import Word
+from textblob.en import Spelling
+from build_dictionary import BuildDict
 
 """ A class with the tools to translate a set of PDF files into a single CSV file using embedded text and OCR"""
 class PDFtoCSV:
@@ -20,7 +24,7 @@ class PDFtoCSV:
 
         self.arguments()
 
-        self.inputFilePath = self.args.filepath
+        self.inputFilePath = os.path.realpath(self.args.filepath)
 
         # Identify the execution path right away
         self.homePath = os.path.dirname(os.path.realpath(__file__))
@@ -121,18 +125,44 @@ class PDFtoCSV:
 
     # Process the files
     def run(self):
-        
+        if self.args.processDictionaryRevert:
+            try:
+                os.remove(BuildDict.customDictPath)
+                print("Custom dictionary removed, default dictionary now active.")
+            except:
+                print("Custom dictionary does not exist.")
+        if self.args.processDictionaryAddWord:
+            BuildDict().merge(BuildDict().customDictPath, " ".join(self.args.processDictionaryAddWord))
+        if self.args.processDictionaryRemoveWord:
+            BuildDict().remove(BuildDict().customDictPath, " ".join(self.args.processDictionaryRemoveWord))
+        if self.args.processDictionary:
+            self.dictionary()
         self.reportText = ""
         if not self.args.split:
             self.createOutput(self.inputFilePath) # Create the output file
         self.completeWordCount = 0  # To keep track of all the words processed
         self.completePageCount = 0 # To keep track of all pages processed
         self.dialog("start") # Print starting dialog
+        self.correctedWords = list()
         for path in self.pathList:
             self.completeWordCount += self.processFile(path) # Process file and update wordcount
         if self.args.report and not self.args.split:
             self.report()
+        if self.args.processAutocorrect and self.args.processCorrections and not self.args.split:
+            self.corrections()
         self.dialog("end") # Print ending dialogue
+
+    def dictionary(self):
+        print("Building custom dictionary.")
+        d = BuildDict()
+        d.get(self.args.processDictionary)
+        d.train(d.customSourcePath)
+        d.merge(d.customDictPath,d.refDictPath)
+        if not self.args.processDictionaryLarge:
+            limit = 1
+            while len(open(d.customDictPath,"r").readlines()) > 70000:
+                d.shrink(d.customDictPath,limit)
+                limit += 1
 
     # Crete a CSV file for the output, given the same name as the input path, and in the same location
     def createOutput(self, path):
@@ -149,11 +179,14 @@ class PDFtoCSV:
 
         self.outputPath = os.path.join(outputDir,outputFilename)
         self.reportPath = self.outputPath[:-4] + "-FR" + self.outputPath[-4:]
+        self.correctionsPath = self.outputPath[:-4] + "-Corrections" + self.outputPath[-4:]
 
         # Create blank file with headers
         with open(self.outputPath, "w+", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
             headers = self.args.fields
+            if "Raw Text" in headers and not self.args.processRaw:
+                headers.remove("Raw Text")
             while headers.count("Custom Text") > 0:
                 i = headers.index("Custom Text")
                 headers.remove("Custom Text")
@@ -162,7 +195,11 @@ class PDFtoCSV:
         
         if self.args.report or self.args.reportFile or self.args.reportPage:
             with open(self.reportPath, "w+", newline='') as outputFile:
-                outputCSVWriter = csv.writer(outputFile, dialect='excel')     
+                outputCSVWriter = csv.writer(outputFile, dialect='excel')
+        if self.args.processAutocorrect and self.args.processCorrections:
+            with open(self.correctionsPath, "w+", newline='') as outputFile:
+                outputCSVWriter = csv.writer(outputFile, dialect='excel')
+                outputCSVWriter.writerow(["Original Word","Corrected","Correction","Confidence"])
     
     # Process each file in its entirety
     def processFile(self, filePath):
@@ -194,9 +231,15 @@ class PDFtoCSV:
                 csvLine = list()
 
                 # Get the text and word count from the page
-                pageText = self.readPage(page) 
+                pageText = self.readPage(page)
+                pageBlob = TextBlob(pageText)
                 self.pageWordCount = len(pageText.split())
                 self.totalWordCount += self.pageWordCount # Update total file word count
+
+                if self.args.processAutocorrect:
+                    correctText = self.autocorrect(pageBlob)
+                    pageText = correctText
+
                 self.pageEnd = time.perf_counter()  # Record time page ends
                 self.pageTime = self.pageEnd-self.pageStart
 
@@ -211,12 +254,16 @@ class PDFtoCSV:
 
                 data = {"Source File Path" : filePath, "Source File Name" : self.filename, "Page Number (File)" : self.pageNum+1, 
                                     "Page Number (Overall)" : self.completePageCount, "Page Word Count" : self.pageWordCount, 
-                                    "Page Processing Duration" : f"{round(self.pageTime,3)} sec.", "Page Text" : pageText, "Process Timestamp" : time.asctime(),
+                                    "Page Processing Duration" : f"{round(self.pageTime,3)} sec.", "Page Text" : pageText, "Raw Text" : pageBlob, "Process Timestamp" : time.asctime(),
                                     self.args.customTitle : customData}
 
                 csvLine = list() # Build the output
                 for f in self.args.fields:
-                    csvLine.append(data[f])
+                    if f == "Raw Text":
+                        if self.args.processRaw:
+                            csvLine.append(data[f])
+                    else:
+                        csvLine.append(data[f])
                 pages.append(csvLine) # Add it to the list of page outputs for the file
                 self.dialog("page") # Update progress dialog
                 
@@ -232,11 +279,36 @@ class PDFtoCSV:
             outputCSVWriter.writerows(pages)
         if self.args.reportFile or (self.args.split and self.args.report):
             self.report()
+        if self.args.processAutocorrect and self.args.processCorrections and self.args.split:
+            self.corrections()
 
         self.dialog("fileEnd")  # Show user statistics for completed file
         self.pdf.close()    # Close the PDF
 
         return self.totalWordCount
+
+    # return an autocorrected version of source text
+    def autocorrect(self, text):
+        correctedText = ""
+        spelling = Spelling(path=BuildDict.customDictPath if os.path.exists(BuildDict.customDictPath) else BuildDict.refDictPath)
+        for w in text.words:
+            lowerWord = w.lower()
+            check = spelling.suggest(lowerWord)
+            corrected = check[0][0]
+
+            if w.isupper():
+                corrected = corrected.upper()
+            elif w.istitle():
+                corrected = corrected.title()
+            correctedText += corrected + " "          
+            if check[0][1] != 1.0:
+                self.correctedWords.append([w, True if check[0][1]>0 else False, corrected if check[0][1]>0 else "", check[0][1] if check[0][1]>0 else ""])
+        return correctedText.strip()
+
+    def corrections(self):
+        with open(self.correctionsPath, "a+", newline='') as outputFile:
+            outputCSVWriter = csv.writer(outputFile, dialect='excel')
+            outputCSVWriter.writerows(self.correctedWords)
 
     # Get the text from a single page
     def readPage(self, page):
@@ -287,8 +359,7 @@ class PDFtoCSV:
         for s in spans:
             text += s["text"]
         return text
-
-    
+   
     def tempImgPath(self):
         # Create a temporary folder for the images used in OCR
         self.imgPath = os.path.join(self.homePath,"tempImages")
@@ -310,9 +381,9 @@ class PDFtoCSV:
         rmtree(self.imgPath) # Delete the temp folder for the pics
                 
         return text
-
+    
+    # Use tesseract to get text via OCR
     def ocr(self, img):
-        # Use tesseract to get text via OCR
         try:
             text = pytesseract.image_to_string(img, lang="eng", config="--psm 1")
         except:
@@ -320,64 +391,90 @@ class PDFtoCSV:
             text = ""
         return text
 
+    # create a frequency report
     def report(self):
         stats = {}
+
+        # Clean the text for analysis
         text = re.sub(r"[^a-z '\-]", "", self.reportText.lower())
         text = re.sub(r"\B'|'\B", "", text)
         text = re.sub(r"\B\-|\-\B", "", text)
         
+        # Remove all but specified words if Report Only arg is used
         if self.args.reportOnly is not None:
+
+            # If no words given, pull from file
             if len(self.args.reportOnly) < 1:
                 self.args.reportOnly.append(os.path.join(self.homePath, "options", "ReportOnly.txt"))
+            
+            # Turn strings from CL or file into regex patterns
             patterns = self.getPattern(self.args.reportOnly)
 
             oldText = text
             text = ""
+
+            # Only include specified words
             for pattern in patterns:
                 matches  = re.findall(r"\b{}\b".format(pattern), oldText)
                 for match in matches:
                     text += match + " "
 
-
+        # Remove specified words if Report Ignore arg is used
         if self.args.reportIgnore is not None:
+
+            # If no words given, pull from file
             if len(self.args.reportIgnore) < 1:
                 self.args.reportIgnore.append(os.path.join(self.homePath, "options", "ReportIgnore.txt"))
+
+            # Turn strings from CL or file into regex patterns
             patterns = self.getPattern(self.args.reportIgnore)
 
+            # Remove specified words
             for pattern in patterns:
                 text = re.sub(r"\b{}\b".format(pattern), "", text)
 
+        # Add words to the dictionary with a count of 1 or add one to count if word already counted
         for w in text.split():
             if w in stats:
                 stats[w] += 1
             else:
                 stats[w] = 1
 
+        # get count of all words
         count = 0
         for c in stats.items():
             count += c[1]
 
+        # sort stats alphabetically
         sortedStats = [(word,count) for (word, count) in sorted(stats.items(),reverse= True, key=lambda x: x[1])]
 
-
+        # trim words included based on the Report Limit argument
         trimmedStats = {}
 
+        # get limit from arg, only numbers and %
         limit = re.sub(r"[^0-9%]", "", self.args.reportLimit)
+
+        # default to 100% if input doesn't make sense
         if len(limit) < 1 or ("%" in limit and len(limit) < 2):
             limit = "100%"
 
+        # get top percentile if % is present
         if limit[-1] == "%":
             percentile = int(re.sub(r"[^0-9]", "", limit))
+
+            # calculate percentile cutoff
             if percentile > 100:
                 percentile = 100
             cieling  = math.ceil((percentile/100) * count)
 
+            # cutoff after instances have reached cutoff
             counter = 0
             for w in sortedStats:
                 counter += w[1]
                 if counter <= cieling or counter == w[1]:
                     trimmedStats[w[0]]=w[1]            
-
+        
+        # if not a percentile, return top x words 
         else:
             cieling = int(re.sub(r"[^0-9]", "", limit))
             for w in sortedStats:
@@ -385,35 +482,54 @@ class PDFtoCSV:
                     trimmedStats[w[0]]=w[1]
 
         finalStats = list()
+
+        # Sort words by frequency if Report Sort arg active, alphabetically if not
         if not self.args.reportSort:
             finalStats = [(word, count) for (word,count) in sorted(trimmedStats.items())]
         else:
             finalStats = trimmedStats.items()
 
-
+        # Write FR to file
         with open(self.reportPath, "a", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
+
+            # Source changes based on if it is split or not
             if self.args.report and not self.args.split:
                 src = self.inputFilePath
             else:
                 src = self.filename
-            outputCSVWriter.writerow(["Frequency Report of all words processed from {}".format(src)])   
+            
+            # Header
+            outputCSVWriter.writerow(["Frequency Report of all words processed from {}".format(src)])  
+
+            # Secondary header if reporting by each page 
             if self.args.reportPage:
                 outputCSVWriter.writerow(["{} page {}/{}".format(self.filename, self.pageNum+1, len(self.pdf))])
+            
+            # Column headers
             outputCSVWriter.writerow(["Word","Instances"])
+
+            # Write output
             for w in finalStats:
                 outputCSVWriter.writerow(w)
+        
+        # Reset report text
         self.reportText = ""
 
+    # Convert list of strings to regex patterns
     def getPattern(self, patternList):
+
+        # If there is a file name, get the list from the custom file source
         if os.path.isfile(patternList[0]):
                 with open(patternList[0], "r") as reportOnlyFile:
                     patterns = [pattern.strip().lower() for pattern in reportOnlyFile if pattern[0] != "#"]
         else:
             patterns = [pattern.lower() for pattern in patternList]
 
+        # Catchall pattern if none specified
         if len(patterns) < 1:
             patterns.append(r"\w*")
+
         return patterns
 
     # Strip unneceesary whitespace
@@ -579,20 +695,20 @@ class PDFtoCSV:
             def __call__(self, parser, namespace, values, option_string=None):
                 fields = dict(p="Source File Path", n="Source File Name", f="Page Number (File)", 
                                 o="Page Number (Overall)", w="Page Word Count",d="Page Processing Duration", 
-                                t="Page Text", s="Process Timestamp", c="Custom Text")
+                                t="Page Text", s="Process Timestamp", c="Custom Text", r="Original Text")
                 outputFields = list()
-                fieldString = re.sub(r"[^pnfowdtsc]","",values.lower())
+                fieldString = re.sub(r"[^pnfowdtscr]","",values.lower())
                 if len(fieldString) < 1:
                     print("No valid fields selected. Please refer to the Guide for help on using this function. Default fields will be used.")
-                    fieldString = "pfwt"
+                    fieldString = "pfwto"
                 for c in fieldString:
                     outputFields.append(fields[c])           
                 setattr(namespace, self.dest, outputFields)     
 
-        fieldGroup.add_argument("-f", "--fields", help="The string of letters representing the fields required in the order desired. See Guide for details", default=['Source File Path', 'Page Number (File)', 'Page Word Count', 'Page Text'], action=FieldAction)
+        fieldGroup.add_argument("-f", "--fields", help="The string of letters representing the fields required in the order desired. See Guide for details", default=['Source File Path', 'Page Number (File)', 'Page Word Count', 'Page Text', 'Raw Text'], action=FieldAction, metavar="Desired Field Order")
         customGroup = parser.add_argument_group("Custom Feild", "These options allow for the creation of a custom field in the CSV output. The indicator 'c' must be included in the field string for this field to be included. See Guide for details.")
-        customGroup.add_argument("-ct", "--customTitle", help="Title of custom field. Default title is 'Custom' if not specified.", default="Custom")
-        customGroup.add_argument("-cc", "--customContent", help="Content of custom field to be repeated for each page. Include @ for file name, # for file page number and $ for overall page number. Default is a blank cell if not specified.", default="")
+        customGroup.add_argument("-ct", "--customTitle", help="Title of custom field. Default title is 'Custom' if not specified.", default="Custom", metavar="Desired Custom Title")
+        customGroup.add_argument("-cc", "--customContent", help="Content of custom field to be repeated for each page. Include @ for file name, # for file page number and $ for overall page number. Default is a blank cell if not specified.", default="", metavar="Desired Custom Content")
         
         class PageAction(argparse.Action):
             def __call__(self, parser, namespace, values, option_string=None):
@@ -607,7 +723,7 @@ class PDFtoCSV:
                         pages.append(int(p))
                 setattr(namespace, self.dest, pages)
 
-        parser.add_argument("-p", "--pages", help="Only retrieve text from specified pages. List individual page numbers or page ranges in the format 1-10.", nargs="+", action=PageAction, default=[])
+        parser.add_argument("-p", "--pages", help="Only retrieve text from specified pages. List individual page numbers or page ranges in the format 1-10.", nargs="+", action=PageAction, default=[], metavar="Desired Page Numbers")
 
         parser.add_argument("-s", "--split", help="Create a separate output CSV for every PDF file instead of the default of one comprehensive output CSV.", action = "store_true")
         
@@ -617,11 +733,26 @@ class PDFtoCSV:
         reportGroupDetails.add_argument("-rp", "--reportPage", help="Create a separate report for each page.", action="store_true")
         reportGroupDetails.add_argument("-rf", "--reportFile", help="Create a separate report for each file.", action="store_true")
         reportGroup.add_argument("-rs", "--reportSort", help="Sort the words by frequency in the report instead of alphabetically.", action="store_true")
-        reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent minimum frequency, numbers with a percentage represent the upper given percentile.", default="100%")
+        reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent minimum frequency, numbers with a percentage represent the upper given percentile.", default="100%", metavar="Desired Report Limit")
         reportWordLists = reportGroup.add_mutually_exclusive_group()
-        reportWordLists.add_argument("-ro", "--reportOnly", help="Report only specified words. Either list words here separated by a space, or modify the file 'options/ReportOnly.txt' as per instructions in that file and the Guide.", nargs="*")
-        reportWordLists.add_argument("-ri", "--reportIgnore", help="Report all words except specified words to ignore. By default ignores the 100 most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ReportIgnore.txt' as per instructions in that file and the Guide.", nargs="*")
+        reportWordLists.add_argument("-ro", "--reportOnly", help="Report only specified words. Either list words here separated by a space, or modify the file 'options/ReportOnly.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Only Report These Words")
+        reportWordLists.add_argument("-ri", "--reportIgnore", help="Report all words except specified words to ignore. By default ignores the 100 most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ReportIgnore.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Ignore These Words")
 
+        processGroup = parser.add_argument_group("Processing Options", "These options allow for common Natural Language Processing text processing operations to be performed on the source text before storing it in the CSV file.")
+        processGroup.add_argument("-pa", "--processAutocorrect", help="Apply an autocorrect alogorithm to the source text, correcting some of the errors from OCR or typos, approximately 70 percent accuracy. Use 'Process Raw' option to include original text in output as well.", action="store_true")
+        processGroup.add_argument("-pr", "--processRaw", help="Include the raw, unprocessed text alongside the processed text in the output CSV.", action="store_true")
+        processGroup.add_argument("-pc", "--processCorrections", help="Create a separate file that contains all of the words that were not found in the dictionary when using the 'Process Autocorrect' option, and whether it was corrected.", action="store_true")
+        processGroup.add_argument("-pd", "--processDictionary", help='''Create a custom dictionary specialized for a given subject matter, to be used by the 'Process Autocorrect' option. List topics here separated by a space, with multiple words surrounded by quotation marks. Topics should correspond to the titles of their respective articles on https://en.wikipedia.org. 
+By default, uncommon words are removed for the sake of efficiency if the new dictionary is more than twice as large as the default dictionary. Disable this process by including the 'Process Dictioanry Large' option. 
+This option needs to be run only once and all future 'Process Autocorrect' uses will use the new custom dictionary. Running this option again with new topics will replace the custom dictionary. Use the 'Process Dictionary Revert' option to delete the custom dictionary and revert to the default one.''', nargs="+", metavar="Desired Dictionary Topic(s)")
+        processGroup.add_argument("-pdl", "--processDictionaryLarge", help='''When used alongside the 'Process Dictionary' option, this includes all words added to the custom dictionary, regardless of frequency. Can result in long processing times when using the 'Process Autocorrect' option.
+If this option has been used, and you want to shrink the dictionary later, use 'build_dictionary.py -s', see 'build_dictionary.py -h' for details and further options.''', action="store_true")
+        processGroup.add_argument("-pdr", "--processDictionaryRevert", help='''Delete the custom dictionary made using 'Process Dictionary' and revert to the default dictionary for all future 'Process Autocorrect' processes.
+To override a previous custom dictionary with a new one, use the 'Process Dictionary' option again with new arguments.''', action="store_true")
+        processGroup.add_argument("-pdaw", "--processDictionaryAddWord", help='''Add specific word(s) to the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. 
+Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise only the first word from each line will be added. Frequency count separated by a space can be added on the same line for improved performance.''', nargs="+", metavar="Words to Add")
+        processGroup.add_argument("-pdrw", "--processDictionaryRemoveWord", help='''Remove specific word(s) from the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. 
+Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise the first word from each line will be removed.''', nargs="+", metavar="Words to Add")
         # Parse all args
         self.args = parser.parse_args()
 

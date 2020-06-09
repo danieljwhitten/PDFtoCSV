@@ -31,3 +31,17 @@ Long-Term (116 hours)
 - Check words against google n-grams instead of internal dictionary
 - Output new pdf with embedded text from OCR
 - Support for languages other than English
+
+
+- autocorrect
+- add words to dictionary  
+    - CL & file
+- Lemmatize
+    - Report and text
+- Tokenize (sentences)
+ - new fields ([D]efault)
+    - original text (D)
+    - Sentence number (D-tokenize)
+- List of misspelled words as sepearate file
+- Report option to count POS separately
+- Remove stop words from text
