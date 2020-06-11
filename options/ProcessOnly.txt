@@ -1,0 +1,22 @@
+# BEGIN INSTRUCTIONS
+# This file contains a list of words that will be included when PDFtoCSV.py
+# is run in Process Only Mode, using the flag -po. When the -po flag is used 
+# without any words listed after it, the words listed in this file are used 
+# instead. Note that words added to this file will remain here unless removed
+# or edited, so if you list words here for one project, ensure you remove them
+# before your next project uses Report Only Mode again.
+#
+# Words should be listed here without spaces before or after, and with each
+# new word on a new line.
+#
+# Phrases can be included on one line. The program will only include instances of
+# the whole phrase. These phrases will be removed from the output text, but only 
+# when the phrase appears as a whole. For example, if the source text is "This is
+# a test, this shows how phrases work." and "this is" is added to this file, the 
+# program will only count instances of "this is" and remove instances of "this" or
+# "is" that appear on their own.
+#
+# Words preceded by a hash (#) are ignored. These instructions can therefore be left
+# here without affecting the function of the program.
+#
+# END INSTRUCTIONS

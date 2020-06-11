@@ -17,18 +17,18 @@ x Return only list of words per page or per file, and counts
     x Only count some words
     x Do not count other words
         x Default do not count list (stop words)
-- option for heavy text cleaning (all optional) 
-    - connect split words
-    - split merged words
-    - remove all punctuation
-    - remove all words not in dictionary
+x option for heavy text cleaning (all optional) 
+    = connect split words
+    = split merged words
+    x remove all punctuation
+    x remove all words not in dictionary
 
 Long-Term (116 hours)
-- autocorrect words not in dictionary
-- Custom dictionary options for text cleaning
+x autocorrect words not in dictionary
+x Custom dictionary options for text cleaning
 - Use existing tools to clean and adjust input OCR files to get a better output
 - Option for multiprocessing to improve performance
-- Check words against google n-grams instead of internal dictionary
+= Check words against google n-grams instead of internal dictionary
 - Output new pdf with embedded text from OCR
 - Support for languages other than English
 
@@ -46,8 +46,8 @@ x Tokenize (words)
     x Word number (D-tokenize)
 x List of misspelled words as sepearate file
 x Report option to count POS separately
-- Remove stop words from text
-- Remove punctuation
-- Remove numbers
+x Remove stop words from text
+x Remove punctuation
+x Remove numbers
 - All lowercase
 - All singular

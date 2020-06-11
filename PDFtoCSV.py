@@ -254,7 +254,7 @@ class PDFtoCSV:
                 self.totalWordCount += self.pageWordCount # Update total file word count
 
                 if self.args.processAutocorrect:
-                    correctText = self.autocorrect(pageBlob)
+                    correctText = self.autocorrect(pageBlob,"correct")
                     pageText = correctText
 
                 if self.args.processLemmatize:
@@ -262,16 +262,25 @@ class PDFtoCSV:
 
                 if self.args.processTokenizeSentences or self.args.processTokenizeWords:
                     sentences = TextBlob(pageText).sentences
-                
-
-                self.pageEnd = time.perf_counter()  # Record time page ends
-                self.pageTime = self.pageEnd-self.pageStart
+                    
+                if self.args.processPunctuation:
+                    pageText = " ".join(TextBlob(pageText).words)
+                    pageText = re.sub(r"[^\w\s'-]|_|\^|\\", "", pageText)
+                if self.args.processNumbers:
+                    pageText = re.sub(r"\d", "", pageText)
+                if self.args.processWords:
+                    pageText = self.autocorrect(TextBlob(pageText), "remove")
 
                 if self.args.report or self.args.reportPage or self.args.reportFile:
                     self.reportText += pageText + " "
                     if self.args.reportPage:
                         self.report()
-            
+
+                pageText = self.editWords(pageText,"process") # Remove words as specified
+
+                self.pageEnd = time.perf_counter()  # Record time page ends
+                self.pageTime = self.pageEnd-self.pageStart
+
                 customData = re.sub("#", f"{self.pageNum+1}", self.args.customContent)
                 customData = re.sub("\$", f"{self.completePageCount}", customData)
                 customData = re.sub("@", self.filename, customData)
@@ -307,7 +316,6 @@ class PDFtoCSV:
                         data["Word Number"] = wordIndex
                     
 
-                print("Text len: {}".format(len(data["Text"])))
                 for i in range(len(data["Text"])):
                     csvLine = list() # Build the output
                     for f in self.args.fields:
@@ -343,30 +351,38 @@ class PDFtoCSV:
         return self.totalWordCount
 
     # return an autocorrected version of source text
-    def autocorrect(self, text):
+    def autocorrect(self, text, mode):
         correctedText = ""
         spelling = Spelling(path=BuildDict.customDictPath if os.path.exists(BuildDict.customDictPath) else BuildDict.refDictPath)
         
         for w in [p.split("/")[0] for p in re.sub(r"\n", " ", text.parse()).split(" ")]:
             if True not in [True if c.isalnum() else False for c in w]:
-                check = [(w, 1.0)]
+                check = [(w, -1)]
                 separator = ""
             else:
                 separator = " "
                 if not w.isalpha():
-                    check = [(w, 1.0)]
+                    check = [(w, -2)]
                 else:
                     lowerWord = w.lower()
                     check = spelling.suggest(lowerWord)
             corrected = check[0][0]
-
             if w.isupper():
                 corrected = corrected.upper()
             elif w.istitle():
                 corrected = corrected.title()
-            correctedText += separator + corrected
-            if check[0][1] != 1.0:
-                self.correctedWords.append([w, True if check[0][1]>0 else False, corrected if check[0][1]>0 else "", check[0][1] if check[0][1]>0 else ""])
+            if mode == "correct":
+                correctedText += separator + corrected
+                if len(list(spelling._known([w.lower()]))) == 0 and check[0][1] > -1:
+                    self.correctedWords.append([w, True if check[0][1]>0 else False, corrected if check[0][1]>0 else "", check[0][1] if check[0][1]>0 else ""])
+            elif mode == "remove":
+                if self.args.processAutocorrect:
+                    if check[0][1] > 0 or check[0][1] == -1:
+                        correctedText += separator + corrected
+                else:
+                    if len(list(spelling._known([w.lower()]))) != 0 or check[0][1] == -1:
+                        correctedText += separator + corrected
+            
         return correctedText.strip()
 
     def corrections(self):
@@ -463,38 +479,7 @@ class PDFtoCSV:
         wordList = blob.words.lower()
         text = " ".join(wordList)
         
-        # Remove all but specified words if Report Only arg is used
-        if self.args.reportOnly is not None:
-
-            # If no words given, pull from file
-            if len(self.args.reportOnly) < 1:
-                self.args.reportOnly.append(os.path.join(self.homePath, "options", "ReportOnly.txt"))
-            
-            # Turn strings from CL or file into regex patterns
-            patterns = self.getPattern(self.args.reportOnly)
-
-            oldText = text
-            text = ""
-
-            # Only include specified words
-            for pattern in patterns:
-                matches  = re.findall(r"\b{}\b".format(pattern), oldText)
-                for match in matches:
-                    text += match + " "
-
-        # Remove specified words if Report Ignore arg is used
-        if self.args.reportIgnore is not None:
-
-            # If no words given, pull from file
-            if len(self.args.reportIgnore) < 1:
-                self.args.reportIgnore.append(os.path.join(self.homePath, "options", "ReportIgnore.txt"))
-
-            # Turn strings from CL or file into regex patterns
-            patterns = self.getPattern(self.args.reportIgnore)
-
-            # Remove specified words
-            for pattern in patterns:
-                text = re.sub(r"\b{}\b".format(pattern), "", text)
+        text = self.editWords(text, "report")
 
         blob = TextBlob(text)
         posList = blob.tags
@@ -588,6 +573,63 @@ class PDFtoCSV:
         
         # Reset report text
         self.reportText = ""
+
+    # Edit the text for the Ignore or Only options of either the Report or Process functions
+    def editWords(self, text, purpose):
+        stopWordsPath = os.path.join(self.homePath, "options", "StopWords.txt")
+        reportIgnorePath = os.path.join(self.homePath, "options", "ReportIgnore.txt")
+        reportOnlyPath = os.path.join(self.homePath, "options", "ReportOnly.txt")
+        processIgnorePath = os.path.join(self.homePath, "options", "ProcessIgnore.txt")
+        processOnlyPath = os.path.join(self.homePath, "options", "ProcessOnly.txt")
+        if purpose == "report":
+            ignorePath = reportIgnorePath
+            onlyPath = reportOnlyPath
+            ignoreList = self.args.reportIgnore
+            onlyList = self.args.reportOnly
+        elif purpose == "process":
+            ignorePath = processIgnorePath
+            onlyPath = processOnlyPath
+            ignoreList = self.args.processIgnore
+            onlyList = self.args.processOnly
+
+        # Remove all but specified words if Report Only arg is used
+        if onlyList is not None:
+            # If no words given, pull from file
+            if len(onlyList) < 1:
+                onlyList.append(onlyPath)
+            
+            # Turn strings from CL or file into regex patterns
+            patterns = self.getPattern(onlyList)
+            oldText = text
+            text = ""
+            # Only include specified words
+            for pattern in patterns:
+                matches  = re.findall(r"\b{}\b".format(pattern), oldText, flags=re.IGNORECASE)
+                for match in matches:
+                    text += match + " "
+
+        # Remove specified words if Report Ignore arg is used
+        if ignoreList is not None:
+
+            # If no words given, pull from file
+            if len(ignoreList) < 1:
+                with open(ignorePath, "r") as f:
+                    if len([line for line in f if line[0] !="#"]) == 0:
+                        ignoreList = [stopWordsPath] 
+                    else:
+                        ignoreList = [ignorePath]
+    
+
+            # Turn strings from CL or file into regex patterns
+            patterns = self.getPattern(ignoreList)
+
+            # Remove specified words
+            for pattern in patterns:
+                text = re.sub(r"\b{}\b".format(pattern), "", text, flags=re.IGNORECASE)
+
+        text = re.sub(r"\s\s+", " ", text) # Fix double spaces
+
+        return text
 
     # Convert list of strings to regex patterns
     def getPattern(self, patternList):
@@ -825,12 +867,13 @@ class PDFtoCSV:
         reportGroup.add_argument("-rpos", "--reportPOS", help="Count homonyms separately if they represent different parts of speech. Eg., without this option 'Can I have a can of juice?' would count two instances of 'can'. With this option, it would count once instance of 'can (noun)' and one of 'can (verb)'.", action="store_true")
         reportWordLists = reportGroup.add_mutually_exclusive_group()
         reportWordLists.add_argument("-ro", "--reportOnly", help="Report only specified words. Either list words here separated by a space, or modify the file 'options/ReportOnly.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Only Report These Words")
-        reportWordLists.add_argument("-ri", "--reportIgnore", help="Report all words except specified words to ignore. By default ignores the 100 most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ReportIgnore.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Ignore These Words")
+        reportWordLists.add_argument("-ri", "--reportIgnore", help="Report all words except specified words to ignore. By default ignores the most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ReportIgnore.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Ignore These Words")
 
         processGroup = parser.add_argument_group("Processing Options", "These options allow for common Natural Language Processing text processing operations to be performed on the source text before storing it in the CSV file.")
         processGroup.add_argument("-pa", "--processAutocorrect", help="Apply an autocorrect alogorithm to the source text, correcting some of the errors from OCR or typos, approximately 70 percent accuracy. Use 'Process Raw' option to include original text in output as well.", action="store_true")
         processGroup.add_argument("-pr", "--processRaw", help="Include the raw, unprocessed text alongside the processed text in the output CSV.", action="store_true")
         processGroup.add_argument("-pc", "--processCorrections", help="Create a separate file that contains all of the words that were not found in the dictionary when using the 'Process Autocorrect' option, and whether it was corrected.", action="store_true")
+        
         processGroup.add_argument("-pd", "--processDictionary", help=("Create a custom dictionary specialized for a given subject matter, to be used by the 'Process Autocorrect' option. List topics here separated by a space, with multiple words surrounded by quotation marks. Topics should correspond to the titles of their respective articles on https://en.wikipedia.org." 
             "By default, uncommon words are removed for the sake of efficiency if the new dictionary is more than twice as large as the default dictionary. Disable this process by including the 'Process Dictioanry Large' option."
             "This option needs to be run only once and all future 'Process Autocorrect' uses will use the new custom dictionary. Running this option again with new topics will replace the custom dictionary. Use the 'Process Dictionary Revert' option to delete the custom dictionary and revert to the default one."), nargs="+", metavar="Desired Dictionary Topic(s)")
@@ -842,9 +885,22 @@ class PDFtoCSV:
             "Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise only the first word from each line will be added. Frequency count separated by a space can be added on the same line for improved performance."), nargs="+", metavar="Words to Add")
         processGroup.add_argument("-pdrw", "--processDictionaryRemoveWord", help=("Remove specific word(s) from the dictionary used by 'Process Autocorrect'. Separate individual words with a single space."
             "Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise the first word from each line will be removed."), nargs="+", metavar="Words to Add")
+        
         processGroup.add_argument("-pl", "--processLemmatize", help="Lemmatize all words for both text output and Frequency Report if 'Report' option is used. This converts words into their base form for easier analysis. Eg., 'went' and 'going' => 'go', 'leaf' and 'leaves' => 'leaf', etc.", action="store_true")
-        processGroup.add_argument("-pts", "--processTokenizeSentences", help="Split the text into sentences and output a single sentence per CSV line.", action = "store_true")
-        processGroup.add_argument("-ptw", "--processTokenizeWords", help ="Split the text into individual words and output a single word per CSV line.", action="store_true")
+        
+        processTokenizers = processGroup.add_mutually_exclusive_group()
+        processTokenizers.add_argument("-pts", "--processTokenizeSentences", help="Split the text into sentences and output a single sentence per CSV line.", action = "store_true")
+        processTokenizers.add_argument("-ptw", "--processTokenizeWords", help ="Split the text into individual words and output a single word per CSV line.", action="store_true")
+        
+        processWordLists = processGroup.add_mutually_exclusive_group()
+        processWordLists.add_argument("-po", "--processOnly", help="Process only specified words. Either list words here separated by a space, or modify the file 'options/ProcessOnly.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Only Process These Words")
+        processWordLists.add_argument("-pi", "--processIgnore", help="Process all words except specified words to ignore. By default ignores the most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ProcessIgnore.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Ignore These Words")
+
+        processGroup.add_argument("-pp", "--processPunctuation", help="Remove all punctuation, excluding internal apostrphes and hypens. Retains all words and numbers, separated by a single space.", action="store_true")
+        processGroup.add_argument("-pn", "--processNumbers", help="Remove all words containing numbers. Used in conjunction with the 'Process Punctuation' option, only words will be returned, separated with spaces. Used alone, punctuation will be preserved.", action="store_true")
+        processGroup.add_argument("-pw", "--processWords", help=("Remove all words not found in the dictionary. If used in conjuction with the 'Process Autocorrect' option, an attempt will first be made to correct an unknown word to a known word, and only words that cannot be corrected would be removed."
+            "See the 'Process Dictionary' option for details on creating a custom dictionary to check words against. If a custom dictionary is not created, the default spell-check dictionary found at options/Dictionary.txt will be used. See Guide for more details."), action="store_true")
+
         # Parse all args
         self.args = parser.parse_args()
 

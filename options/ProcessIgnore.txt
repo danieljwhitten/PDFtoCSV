@@ -1,19 +1,19 @@
 # BEGIN INSTRUCTIONS
-# This file contains a list of words that will be ignored when PDFtoCSV.py
-# is run in Report Ignore Mode, using the flag -ri. When the -ri flag is used 
+# This file contains a list of words that will be removed when PDFtoCSV.py
+# is run in Process Ignore Mode, using the flag -pi. When the -pi flag is used 
 # without any words listed after it, the words listed in this file are used 
 # instead. Note that words added to this file will remain here unless removed
 # or edited, so if you list words here for one project, ensure you remove them
 # before your next project uses Report Ignore Mode again.
 # 
-# NOTE: If no words are listed in this file and the -ri flag is used, the words
+# NOTE: If no words are listed in this file and the -pi flag is used, the words
 # from StopWords.txt will be used instead. Please see that file for further details.
 #
 # Phrases can be included on one line. The program will only ignore instances of
 # the whole phrase. The frequency report will still count individual words.
 # For example, if the source text is "This is a test, this shows how phrases work."
 # and "this is" is added to this file, the program will only ignore instances of 
-# "this is" and give a count of "this: 1" as it is included once outside of the phrase.
+# "this is" and output the text as "a test, this shows how frames work."
 #
 # Words preceded by a hash (#) are ignored. These instructions can therefore be left
 # here without affecting the function of the program.
