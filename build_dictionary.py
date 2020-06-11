@@ -109,8 +109,12 @@ class BuildDict:
         return {page.group("title"):page.group("text").strip() for page in pageList}
 
     def merge(self, dictPath, refDictPath):
-        with open(dictPath, "r") as f:
-            customDict = {line.split()[0]:int(line.split()[1]) for line in f}
+        if os.path.exists(dictPath):
+            with open(dictPath, "r") as f:
+                customDict = {line.split()[0]:int(line.split()[1]) for line in f}
+        else:
+            with open(self.refDictPath, "r") as f:
+                customDict = {line.split()[0]:int(line.split()[1]) for line in f}
         if os.path.exists(refDictPath):
             with open(refDictPath, "r") as f:
                 refDict = {line.split()[0]:int(line.split()[1]) if len(line.split()) == 2 and line.split()[1].isdigit() else 1 for line in f}
@@ -129,12 +133,16 @@ class BuildDict:
             bigDict = {line.split()[0]:int(line.split()[1]) for line in f}
         smallDict = ["{} {}\n".format(k,bigDict[k]) for k in iter(bigDict) if bigDict[k] > limit]
         print("Dictionary has been shrunk {:.2%} from original size of {:,} unique words to new size of {:,} unique words.".format(1-(len(smallDict)/len(bigDict)), len(bigDict), len(smallDict)))
-        with open(dictPath, "w") as f:
+        with open(dictPath, "w+") as f:
             f.writelines(smallDict)
 
     def remove(self, dictPath, wordsSource):
-        with open(dictPath, "r") as f:
-            customDict = {line.split()[0]:int(line.split()[1]) for line in f}
+        if os.path.exists(dictPath):
+            with open(dictPath, "r") as f:
+                customDict = {line.split()[0]:int(line.split()[1]) for line in f}
+        else:
+            with open(self.refDictPath, "r") as f:
+                customDict = {line.split()[0]:int(line.split()[1]) for line in f}
         if os.path.exists(wordsSource):
             with open(wordsSource, "r") as f:
                 words = [line.split()[0] for line in f]

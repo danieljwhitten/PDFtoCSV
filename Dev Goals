@@ -33,15 +33,21 @@ Long-Term (116 hours)
 - Support for languages other than English
 
 
-- autocorrect
-- add words to dictionary  
-    - CL & file
-- Lemmatize
-    - Report and text
-- Tokenize (sentences)
- - new fields ([D]efault)
-    - original text (D)
-    - Sentence number (D-tokenize)
-- List of misspelled words as sepearate file
-- Report option to count POS separately
+x autocorrect
+x add words to dictionary  
+    x CL & file
+x Lemmatize
+    x Report and text
+x Tokenize (sentences)
+x Tokenize (words)
+ x new fields ([D]efault)
+    x original text (D)
+    x Sentence number (D-tokenize)
+    x Word number (D-tokenize)
+x List of misspelled words as sepearate file
+x Report option to count POS separately
 - Remove stop words from text
+- Remove punctuation
+- Remove numbers
+- All lowercase
+- All singular
