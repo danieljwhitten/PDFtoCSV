@@ -9,7 +9,7 @@ x Surpress progress text
 x Give page-by-page progress
 
 Medium-Term (58 hours)
-- Group output by blocks of text on page (Merging with "Force OCR" as "Thorough Mode")
+= Group output by blocks of text on page (Merging with "Force OCR" as "Thorough Mode")
 x Return only list of words per page or per file, and counts
     x Create frequency reports for total, file, and page
     x Sort alphabetically or by frequency
@@ -49,5 +49,4 @@ x Report option to count POS separately
 x Remove stop words from text
 x Remove punctuation
 x Remove numbers
-- All lowercase
-- All singular
+x All lowercase

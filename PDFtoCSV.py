@@ -262,7 +262,7 @@ class PDFtoCSV:
 
                 if self.args.processTokenizeSentences or self.args.processTokenizeWords:
                     sentences = TextBlob(pageText).sentences
-                    
+
                 if self.args.processPunctuation:
                     pageText = " ".join(TextBlob(pageText).words)
                     pageText = re.sub(r"[^\w\s'-]|_|\^|\\", "", pageText)
@@ -270,7 +270,8 @@ class PDFtoCSV:
                     pageText = re.sub(r"\d", "", pageText)
                 if self.args.processWords:
                     pageText = self.autocorrect(TextBlob(pageText), "remove")
-
+                if self.args.processLowerCase:
+                    pageText = pageText.lower()
                 if self.args.report or self.args.reportPage or self.args.reportFile:
                     self.reportText += pageText + " "
                     if self.args.reportPage:
@@ -900,6 +901,7 @@ class PDFtoCSV:
         processGroup.add_argument("-pn", "--processNumbers", help="Remove all words containing numbers. Used in conjunction with the 'Process Punctuation' option, only words will be returned, separated with spaces. Used alone, punctuation will be preserved.", action="store_true")
         processGroup.add_argument("-pw", "--processWords", help=("Remove all words not found in the dictionary. If used in conjuction with the 'Process Autocorrect' option, an attempt will first be made to correct an unknown word to a known word, and only words that cannot be corrected would be removed."
             "See the 'Process Dictionary' option for details on creating a custom dictionary to check words against. If a custom dictionary is not created, the default spell-check dictionary found at options/Dictionary.txt will be used. See Guide for more details."), action="store_true")
+        processGroup.add_argument("-plc", "--processLowerCase", help="Convert all letters to lower-case for CSV output.", action ="store_true")
 
         # Parse all args
         self.args = parser.parse_args()
