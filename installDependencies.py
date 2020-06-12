@@ -15,6 +15,7 @@ for package in dependencies:
         run([sys.executable, "-m", "pip", "install", dep])
     if util.find_spec(lib) is not None:
     	successCount += 1
+    run([sys.executable, "-m", "textblob.download_corpora"])
 if successCount == len(dependencies):
 	print("All packages are installed")
 else:

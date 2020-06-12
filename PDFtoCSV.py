@@ -826,7 +826,7 @@ class PDFtoCSV:
             def __call__(self, parser, namespace, values, option_string=None):
                 fields = dict(p="Source File Path", n="Source File Name", f="Page Number (File)", 
                                 o="Page Number (Overall)", w="Word Count",d="Page Processing Duration", 
-                                t="Text", s="Process Timestamp", c="Custom Text", r="Original Text")
+                                t="Text", s="Process Timestamp", c="Custom Text", r="Raw Text")
                 outputFields = list()
                 fieldString = re.sub(r"[^pnfowdtscr]","",values.lower())
                 if len(fieldString) < 1:
