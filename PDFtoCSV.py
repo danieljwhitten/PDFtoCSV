@@ -31,17 +31,17 @@ class PDFtoCSV:
         # Run basic setup to confirm input can be processed
         try:
             # Confirm that Tesseract OCR is properly installed right away
-            self.findTesseract()
+            self.find_tesseract()
             # Identify whether the input is a single file or a directory
-            self.inputType = self.fileOrDir(self.inputFilePath)
+            self.inputType = self.file_or_dir(self.inputFilePath)
             # Compile list of all valid PDF files from input
-            self.pathList = self.getFileList(self.inputFilePath, self.inputType)
+            self.pathList = self.get_file_list(self.inputFilePath, self.inputType)
 
         except IOError as e:
-            self.errorFound(e)
+            self.error_found(e)
             
     # Check to see if Tesseract OCR has been installed as per README
-    def findTesseract(self):
+    def find_tesseract(self):
 
         # Identify default locations for Windows or Mac
         operatingSystem = sys.platform
@@ -67,7 +67,7 @@ class PDFtoCSV:
             pytesseract.pytesseract.tesseract_cmd = tesseractPath
 
     # Check to see if the input is a valid file or a valid dir, return either or raise an error
-    def fileOrDir(self, path):
+    def file_or_dir(self, path):
         isFile = os.path.isfile(path)
         if not isFile:
             isDir = os.path.isdir(path)
@@ -81,7 +81,7 @@ class PDFtoCSV:
             return "file"   
 
     # Create a list of all valid PDF files in a given path
-    def getFileList(self, path, inputType):
+    def get_file_list(self, path, inputType):
         files = list()
         
         # Create a list of all files in a given path
@@ -138,13 +138,13 @@ class PDFtoCSV:
             self.dictionary()
         self.reportText = ""
         if not self.args.split:
-            self.createOutput(self.inputFilePath) # Create the output file
+            self.create_output(self.inputFilePath) # Create the output file
         self.completeWordCount = 0  # To keep track of all the words processed
         self.completePageCount = 0 # To keep track of all pages processed
         self.dialog("start") # Print starting dialog
         self.correctedWords = list()
         for path in self.pathList:
-            self.completeWordCount += self.processFile(path) # Process file and update wordcount
+            self.completeWordCount += self.process_file(path) # Process file and update wordcount
         if self.args.report and not self.args.split:
             self.report()
         if self.args.processAutocorrect and self.args.processCorrections and not self.args.split:
@@ -164,7 +164,7 @@ class PDFtoCSV:
                 limit += 1
 
     # Crete a CSV file for the output, given the same name as the input path, and in the same location
-    def createOutput(self, path):
+    def create_output(self, path):
 
         # Remove trailing / or \
         if path[-1] == "/" or path[-1] == r"\\":
@@ -215,11 +215,11 @@ class PDFtoCSV:
                 outputCSVWriter.writerow(["Original Word","Corrected","Correction","Confidence"])
     
     # Process each file in its entirety
-    def processFile(self, filePath):
+    def process_file(self, filePath):
         self.filename = os.path.basename(filePath)
 
         if self.args.split:
-            self.createOutput(filePath)
+            self.create_output(filePath)
 
         self.pdf = fitz.open(filePath)   # Open the PDF with MuPDF
         self.skippedPages = False   # Reset
@@ -244,7 +244,7 @@ class PDFtoCSV:
                 csvLine = list()
 
                 # Get the text and word count from the page
-                pageText = self.readPage(page)
+                pageText = self.read_page(page)
                 pageBlob = TextBlob(pageText)
                 sentencesBlob = pageBlob.sentences
                 wordsBlob = list()
@@ -277,14 +277,14 @@ class PDFtoCSV:
                     if self.args.reportPage:
                         self.report()
 
-                pageText = self.editWords(pageText,"process") # Remove words as specified
+                pageText = self.edit_words(pageText,"process") # Remove words as specified
 
                 self.pageEnd = time.perf_counter()  # Record time page ends
                 self.pageTime = self.pageEnd-self.pageStart
 
-                customData = re.sub("#", f"{self.pageNum+1}", self.args.customContent)
-                customData = re.sub("\$", f"{self.completePageCount}", customData)
-                customData = re.sub("@", self.filename, customData)
+                customData = re.sub(r"#", f"{self.pageNum+1}", self.args.customContent)
+                customData = re.sub(r"\$", f"{self.completePageCount}", customData)
+                customData = re.sub(r"@", self.filename, customData)
 
                 data = {"Source File Path" : filePath, "Source File Name" : self.filename, "Page Number (File)" : self.pageNum+1, 
                                     "Page Number (Overall)" : self.completePageCount, "Word Count" : [self.pageWordCount], 
@@ -392,10 +392,10 @@ class PDFtoCSV:
             outputCSVWriter.writerows(self.correctedWords)
 
     # Get the text from a single page
-    def readPage(self, page):
+    def read_page(self, page):
         # try to extract text
         if self.args.thorough:
-            text = self.thoroughPage(page)
+            text = self.thorough_page(page)
         else:
             text = page.getText()
 
@@ -403,14 +403,14 @@ class PDFtoCSV:
                 if self.args.accelerated:  # Skip if Accelerated option active
                     self.skippedPages = True
                 else:
-                    text = self.ocrPage(page)
+                    text = self.ocr_page(page)
                     if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
                         self.dialog("ocr")
                     self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
         text = self.cleanText(text) # Pass text through text cleaning processes
         return text
 
-    def thoroughPage(self,page):
+    def thorough_page(self,page):
         if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
             self.dialog("ocr")
         self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
@@ -418,7 +418,7 @@ class PDFtoCSV:
         imgList = page.getImageList(full=True)
         for i in imgList:
             imgBBox = page.getImageBbox(i)
-            self.tempImgPath()
+            self.tem_image_path()
             imgDict = self.pdf.extractImage(i[0])
             img = os.path.join(self.imgPath,"{}.{}".format(i[0], imgDict["ext"]))
             imgout = open(img, "wb")
@@ -441,7 +441,7 @@ class PDFtoCSV:
             text += s["text"]
         return text
    
-    def tempImgPath(self):
+    def tem_image_path(self):
         # Create a temporary folder for the images used in OCR
         self.imgPath = os.path.join(self.homePath,"tempImages")
         try:
@@ -450,8 +450,8 @@ class PDFtoCSV:
             pass
 
     # Read a page using OCR
-    def ocrPage(self, page):
-        self.tempImgPath()
+    def ocr_page(self, page):
+        self.tem_image_path()
         zoomMatrix = fitz.Matrix(3.2,3.2)   # Set the optimal settings for OCR-readable images
         pix = page.getPixmap(matrix=zoomMatrix, colorspace=fitz.csGRAY, alpha=True) # Generate pixmap from PDF page
         img = os.path.join(self.imgPath,"page-%i.png" % page.number) # find image in pixmap
@@ -480,7 +480,7 @@ class PDFtoCSV:
         wordList = blob.words.lower()
         text = " ".join(wordList)
         
-        text = self.editWords(text, "report")
+        text = self.edit_words(text, "report")
 
         blob = TextBlob(text)
         posList = blob.tags
@@ -576,7 +576,7 @@ class PDFtoCSV:
         self.reportText = ""
 
     # Edit the text for the Ignore or Only options of either the Report or Process functions
-    def editWords(self, text, purpose):
+    def edit_words(self, text, purpose):
         stopWordsPath = os.path.join(self.homePath, "options", "StopWords.txt")
         reportIgnorePath = os.path.join(self.homePath, "options", "ReportIgnore.txt")
         reportOnlyPath = os.path.join(self.homePath, "options", "ReportOnly.txt")
@@ -600,7 +600,7 @@ class PDFtoCSV:
                 onlyList.append(onlyPath)
             
             # Turn strings from CL or file into regex patterns
-            patterns = self.getPattern(onlyList)
+            patterns = self.get_pattern(onlyList)
             oldText = text
             text = ""
             # Only include specified words
@@ -622,7 +622,7 @@ class PDFtoCSV:
     
 
             # Turn strings from CL or file into regex patterns
-            patterns = self.getPattern(ignoreList)
+            patterns = self.get_pattern(ignoreList)
 
             # Remove specified words
             for pattern in patterns:
@@ -633,7 +633,7 @@ class PDFtoCSV:
         return text
 
     # Convert list of strings to regex patterns
-    def getPattern(self, patternList):
+    def get_pattern(self, patternList):
 
         # If there is a file name, get the list from the custom file source
         if os.path.isfile(patternList[0]):
@@ -649,7 +649,7 @@ class PDFtoCSV:
         return patterns
 
     # Strip unneceesary whitespace
-    def stripWhite(self, text):
+    def strip_whitespace(self, text):
         newText = ""
         for c in text.group(0):
             if not re.match(r"\s", c):
@@ -676,7 +676,7 @@ class PDFtoCSV:
         cleanText = re.sub(r'''[^a-zA-Z0-9' .;,"$/@!?&\-()_]''', r"", cleanText)
 
         # clean words split up by spaces
-        cleanText = re.sub(r"(\b\w\s)+", self.stripWhite, cleanText)
+        cleanText = re.sub(r"(\b\w\s)+", self.strip_whitespace, cleanText)
 
         # fix spaces
         cleanText = re.sub(r"\s+", " ", cleanText)
@@ -794,7 +794,7 @@ class PDFtoCSV:
                     print("\rProgress: 0%|====================|100%                ")
 
     # Error dialog
-    def errorFound(self, e):
+    def error_found(self, e):
         print("Sorry! There's been a problem. {} and try again.".format(e.strerror))
 
     # Argument processing
@@ -879,7 +879,7 @@ class PDFtoCSV:
             "By default, uncommon words are removed for the sake of efficiency if the new dictionary is more than twice as large as the default dictionary. Disable this process by including the 'Process Dictioanry Large' option. "
             "This option needs to be run only once and all future 'Process Autocorrect' uses will use the new custom dictionary. Running this option again with new topics will replace the custom dictionary. Use the 'Process Dictionary Revert' option to delete the custom dictionary and revert to the default one."), nargs="+", metavar="Desired Dictionary Topic(s)")
         processGroup.add_argument("-pdl", "--processDictionaryLarge", help=("When used alongside the 'Process Dictionary' option, this includes all words added to the custom dictionary, regardless of frequency. Can result in long processing times when using the 'Process Autocorrect' option. "
-            "If this option has been used, and you want to shrink the dictionary later, use 'build_dictionary.py -s', see 'build_dictionary.py -h' for details and further options."), action="store_true ")
+            "If this option has been used, and you want to shrink the dictionary later, use 'build_dictionary.py -s', see 'build_dictionary.py -h' for details and further options."), action="store_true")
         processGroup.add_argument("-pdr", "--processDictionaryRevert", help=("Delete the custom dictionary made using 'Process Dictionary' and revert to the default dictionary for all future 'Process Autocorrect' processes. "
             "To override a previous custom dictionary with a new one, use the 'Process Dictionary' option again with new arguments."), action="store_true")
         processGroup.add_argument("-pdaw", "--processDictionaryAddWord", help=("Add specific word(s) to the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. " 
