@@ -831,7 +831,7 @@ class PDFtoCSV:
                 fieldString = re.sub(r"[^pnfowdtscr]","",values.lower())
                 if len(fieldString) < 1:
                     print("No valid fields selected. Please refer to the Guide for help on using this function. Default fields will be used.")
-                    fieldString = "pfwto"
+                    fieldString = "pfwtr"
                 for c in fieldString:
                     outputFields.append(fields[c])           
                 setattr(namespace, self.dest, outputFields)     
@@ -875,16 +875,16 @@ class PDFtoCSV:
         processGroup.add_argument("-pr", "--processRaw", help="Include the raw, unprocessed text alongside the processed text in the output CSV.", action="store_true")
         processGroup.add_argument("-pc", "--processCorrections", help="Create a separate file that contains all of the words that were not found in the dictionary when using the 'Process Autocorrect' option, and whether it was corrected.", action="store_true")
         
-        processGroup.add_argument("-pd", "--processDictionary", help=("Create a custom dictionary specialized for a given subject matter, to be used by the 'Process Autocorrect' option. List topics here separated by a space, with multiple words surrounded by quotation marks. Topics should correspond to the titles of their respective articles on https://en.wikipedia.org." 
-            "By default, uncommon words are removed for the sake of efficiency if the new dictionary is more than twice as large as the default dictionary. Disable this process by including the 'Process Dictioanry Large' option."
+        processGroup.add_argument("-pd", "--processDictionary", help=("Create a custom dictionary specialized for a given subject matter, to be used by the 'Process Autocorrect' option. List topics here separated by a space, with multiple words surrounded by quotation marks. Topics should correspond to the titles of their respective articles on https://en.wikipedia.org. " 
+            "By default, uncommon words are removed for the sake of efficiency if the new dictionary is more than twice as large as the default dictionary. Disable this process by including the 'Process Dictioanry Large' option. "
             "This option needs to be run only once and all future 'Process Autocorrect' uses will use the new custom dictionary. Running this option again with new topics will replace the custom dictionary. Use the 'Process Dictionary Revert' option to delete the custom dictionary and revert to the default one."), nargs="+", metavar="Desired Dictionary Topic(s)")
-        processGroup.add_argument("-pdl", "--processDictionaryLarge", help=("When used alongside the 'Process Dictionary' option, this includes all words added to the custom dictionary, regardless of frequency. Can result in long processing times when using the 'Process Autocorrect' option."
-            "If this option has been used, and you want to shrink the dictionary later, use 'build_dictionary.py -s', see 'build_dictionary.py -h' for details and further options."), action="store_true")
-        processGroup.add_argument("-pdr", "--processDictionaryRevert", help=("Delete the custom dictionary made using 'Process Dictionary' and revert to the default dictionary for all future 'Process Autocorrect' processes."
+        processGroup.add_argument("-pdl", "--processDictionaryLarge", help=("When used alongside the 'Process Dictionary' option, this includes all words added to the custom dictionary, regardless of frequency. Can result in long processing times when using the 'Process Autocorrect' option. "
+            "If this option has been used, and you want to shrink the dictionary later, use 'build_dictionary.py -s', see 'build_dictionary.py -h' for details and further options."), action="store_true ")
+        processGroup.add_argument("-pdr", "--processDictionaryRevert", help=("Delete the custom dictionary made using 'Process Dictionary' and revert to the default dictionary for all future 'Process Autocorrect' processes. "
             "To override a previous custom dictionary with a new one, use the 'Process Dictionary' option again with new arguments."), action="store_true")
-        processGroup.add_argument("-pdaw", "--processDictionaryAddWord", help=("Add specific word(s) to the dictionary used by 'Process Autocorrect'. Separate individual words with a single space." 
+        processGroup.add_argument("-pdaw", "--processDictionaryAddWord", help=("Add specific word(s) to the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. " 
             "Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise only the first word from each line will be added. Frequency count separated by a space can be added on the same line for improved performance."), nargs="+", metavar="Words to Add")
-        processGroup.add_argument("-pdrw", "--processDictionaryRemoveWord", help=("Remove specific word(s) from the dictionary used by 'Process Autocorrect'. Separate individual words with a single space."
+        processGroup.add_argument("-pdrw", "--processDictionaryRemoveWord", help=("Remove specific word(s) from the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. "
             "Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise the first word from each line will be removed."), nargs="+", metavar="Words to Add")
         
         processGroup.add_argument("-pl", "--processLemmatize", help="Lemmatize all words for both text output and Frequency Report if 'Report' option is used. This converts words into their base form for easier analysis. Eg., 'went' and 'going' => 'go', 'leaf' and 'leaves' => 'leaf', etc.", action="store_true")
@@ -899,7 +899,7 @@ class PDFtoCSV:
 
         processGroup.add_argument("-pp", "--processPunctuation", help="Remove all punctuation, excluding internal apostrphes and hypens. Retains all words and numbers, separated by a single space.", action="store_true")
         processGroup.add_argument("-pn", "--processNumbers", help="Remove all words containing numbers. Used in conjunction with the 'Process Punctuation' option, only words will be returned, separated with spaces. Used alone, punctuation will be preserved.", action="store_true")
-        processGroup.add_argument("-pw", "--processWords", help=("Remove all words not found in the dictionary. If used in conjuction with the 'Process Autocorrect' option, an attempt will first be made to correct an unknown word to a known word, and only words that cannot be corrected would be removed."
+        processGroup.add_argument("-pw", "--processWords", help=("Remove all words not found in the dictionary. If used in conjuction with the 'Process Autocorrect' option, an attempt will first be made to correct an unknown word to a known word, and only words that cannot be corrected would be removed. "
             "See the 'Process Dictionary' option for details on creating a custom dictionary to check words against. If a custom dictionary is not created, the default spell-check dictionary found at options/Dictionary.txt will be used. See Guide for more details."), action="store_true")
         processGroup.add_argument("-plc", "--processLowerCase", help="Convert all letters to lower-case for CSV output.", action ="store_true")
 
