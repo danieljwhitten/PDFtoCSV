@@ -16,14 +16,368 @@ from textblob.en import Spelling
 from build_dictionary import BuildDict
 
 """ A class with the tools to translate a set of PDF files into a single CSV file using embedded text and OCR"""
-class PDFtoCSV:
+class PDFtoCSV:            
     
+    class Arguments:
+
+        def __init__(self, user_args=""):
+
+            # Initialize parser
+            parser = argparse.ArgumentParser()
+            
+            # Require path argument
+            parser.add_argument("filepath", 
+                help=("The path to the file or folder you would like to process. "
+                "Must be verbatim and enclosed in quotes. See guide for details.")
+            )
+            
+            # Arguments that augment the speed of the program
+            speedGroup = parser.add_mutually_exclusive_group()
+            # Accelerated (Ignore OCR pages)
+            speedGroup.add_argument("-a", "--accelerated", 
+                help=("Ignore any pages that require time-consuming OCR to process. "
+                "The program will run very quickly, but might miss some text, "
+                "depending on your source file formats."), 
+                action="store_true"
+            )
+            # Thorough (OCR all pages)
+            speedGroup.add_argument("-t", "--thorough", 
+                help=("Force Optical Character Recognition (OCR) for all pages. "
+                "This will be much slower than the default option, but is the most thorough."), 
+                action="store_true"
+            )
+
+            # Arguments related to progress output
+            progressGroup = parser.add_mutually_exclusive_group()
+            # Quiet Mode (no progress updates)
+            progressGroup.add_argument("-q", "--quiet", 
+                help=("Supress progress updates about individual files. There can be "
+                "a long period of time with no progress updates as the progam runs."), 
+                action="store_true"
+            )
+            # Verbose Mode (progress update per page)
+            progressGroup.add_argument("-v", "--verbose", 
+                help=("Show detailed progress updates for each page. This can result "
+                "in a lot of progress updates for larger files."), 
+                action="store_true"
+            )
+
+            fieldGroup = parser.add_argument_group("Field Options", 
+                ("This mode allows for the customization of the fields used "
+                "for the CSV columns. See Guide for usage and syntax.")
+            )
+            class FieldAction(argparse.Action):
+                def __call__(self, parser, namespace, values, option_string=None):
+                    fields = dict(
+                        p="Source File Path", 
+                        n="Source File Name", 
+                        f="Page Number (File)", 
+                        o="Page Number (Overall)", 
+                        w="Word Count",
+                        d="Page Processing Duration", 
+                        t="Text", 
+                        s="Process Timestamp", 
+                        c="Custom Text", 
+                        r="Raw Text"
+                    )
+                    outputFields = list()
+                    fieldString = re.sub(r"[^pnfowdtscr]","",values.lower())
+                    if len(fieldString) < 1:
+                        print(
+                            ("No valid fields selected. Please refer to the Guide "
+                            "for help on using this function. Default fields will be used.")
+                        )
+                        fieldString = "pfwtr"
+                    for c in fieldString:
+                        outputFields.append(fields[c])           
+                    setattr(namespace, self.dest, outputFields)     
+
+            fieldGroup.add_argument("-f", "--fields", 
+                help=("The string of letters representing the fields required "
+                "in the order desired. See Guide for details"), 
+                default=[
+                    'Source File Path', 
+                    'Page Number (File)', 
+                    'Word Count', 
+                    'Text', 
+                    'Raw Text'
+                ], 
+                action=FieldAction, 
+                metavar="Desired Field Order"
+            )
+            customGroup = parser.add_argument_group("Custom Feild", 
+                ("These options allow for the creation of a custom field in the CSV output. "
+                "The indicator 'c' must be included in the field string for this field to be included. "
+                "See Guide for details.")
+            )
+            customGroup.add_argument("-ct", "--customTitle", 
+                help="Title of custom field. Default title is 'Custom' if not specified.", 
+                default="Custom", 
+                metavar="Desired Custom Title",
+                dest="custom_title"
+            )
+            customGroup.add_argument("-cc", "--customContent", 
+                help=("Content of custom field to be repeated for each page. "
+                "Include @ for file name, # for file page number and $ for overall page number. "
+                "Default is a blank cell if not specified."), 
+                default="", 
+                metavar="Desired Custom Content",
+                dest="custom_content"
+            )
+            
+            class PageAction(argparse.Action):
+                def __call__(self, parser, namespace, values, option_string=None):
+                    pages = list()
+                    for p in values:
+                        p = re.sub(r"[^0-9\-]","", p)
+                        if "-" in p:
+                            rng = range(int(p.split("-")[0]),int(p.split("-")[1])+1)
+                            for i in rng:
+                                pages.append(i)
+                        elif len(p) > 0:
+                            pages.append(int(p))
+                    setattr(namespace, self.dest, pages)
+
+            parser.add_argument("-p", "--pages", 
+                help=("Only retrieve text from specified pages. "
+                "List individual page numbers or page ranges in the format 1-10."), 
+                nargs="+", 
+                action=PageAction, 
+                default=[], 
+                metavar="Desired Page Numbers"
+            )
+
+            parser.add_argument("-s", "--split", 
+                help=("Create a separate output CSV for every PDF file instead of "
+                "the default of one comprehensive output CSV."), 
+                action = "store_true"
+            )
+            
+            reportGroup = parser.add_argument_group("Report Mode", 
+                "Create a separate CSV with a report of frequency of each word present in the text."
+            )
+            reportGroupDetails = reportGroup.add_mutually_exclusive_group()
+            reportGroupDetails.add_argument("-r", "--report", 
+                help=("Create one report with cumulative counts for all words in all files. "
+                "This will create a report per file if 'Split Mode' is also used."), 
+                action="store_true"
+            )
+            reportGroupDetails.add_argument("-rp", "--reportPage", 
+                help="Create a separate report for each page.", 
+                action="store_true",
+                dest="report_page"
+            )
+            reportGroupDetails.add_argument("-rf", "--reportFile", 
+                help="Create a separate report for each file.", 
+                action="store_true",
+                dest="report_file"
+            )
+            reportGroup.add_argument("-rs", "--reportSort", 
+                help="Sort the words by frequency in the report instead of alphabetically.", 
+                action="store_true",
+                dest="report_sort"
+            )
+            reportGroup.add_argument("-rl", "--reportLimit", 
+                help=("Only include words above a certain frequency. "
+                "Numbers alone represent minimum frequency, numbers with a percentage "
+                "represent the upper given percentile."), 
+                default="100%", 
+                metavar="Desired Report Limit",
+                dest="report_limit"
+            )
+            reportGroup.add_argument("-rpos", "--reportPOS", 
+                help=("Count homonyms separately if they represent different parts of speech. "
+                "Eg., without this option 'Can I have a can of juice?' would count "
+                "two instances of 'can'. With this option, it would count once instance "
+                "of 'can (noun)' and one of 'can (verb)'."), 
+                action="store_true",
+                dest="report_pos"
+            )
+            reportWordLists = reportGroup.add_mutually_exclusive_group()
+            reportWordLists.add_argument("-ro", "--reportOnly", 
+                help=("Report only specified words. Either list words here separated by a space, "
+                "or modify the file 'options/ReportOnly.txt' as per instructions "
+                "in that file and the Guide."), 
+                nargs="*", 
+                metavar="Only Report These Words",
+                dest="report_only"
+            )
+            reportWordLists.add_argument("-ri", "--reportIgnore", 
+                help=("Report all words except specified words to ignore. By default "
+                "ignores the most common English words. For custom word lists, "
+                "either list words here separated by a space, or modify the file "
+                "'options/ReportIgnore.txt' as per instructions in that file and the Guide."), 
+                nargs="*", 
+                metavar="Ignore These Words",
+                dest="report_ignore"
+            )
+
+            processGroup = parser.add_argument_group("Processing Options", 
+                ("These options allow for common Natural Language Processing text "
+                "processing operations to be performed on the source text before "
+                "storing it in the CSV file.")
+            )
+            processGroup.add_argument("-ac", "--autocorrect", 
+                help=("Apply an autocorrect alogorithm to the source text, correcting "
+                "some of the errors from OCR or typos, approximately 70 percent accuracy. "
+                "Use 'Process Raw' option to include original text in output as well."), 
+                action="store_true"
+            )
+            processGroup.add_argument("-st", "--sourceText", 
+                help=("Include the raw, unprocessed source text alongside "
+                "the processed text in the output CSV."), 
+                action="store_true",
+                dest="source_text"
+            )
+            processGroup.add_argument("-c", "--corrections", 
+                help=("Create a separate file that contains all of the words that were "
+                "not found in the dictionary when using the 'Process Autocorrect' option, "
+                "and whether it was corrected."), 
+                action="store_true"
+            )
+
+            processGroup.add_argument("-d", "--dictionary", 
+                help=("Create a custom dictionary specialized for a given subject matter, "
+                "to be used by the 'Autocorrect' option. List topics here "
+                "separated by a space, with multiple words surrounded by quotation marks. "
+                "Topics should correspond to the titles of their respective articles "
+                "on https://en.wikipedia.org. By default, uncommon words are removed "
+                "for the sake of efficiency if the new dictionary is more than twice "
+                "as large as the default dictionary. Disable this process by including "
+                "the 'Dictioanry Large' option. This option needs to be run "
+                "only once and all future 'Autocorrect' uses will use the new "
+                "custom dictionary. Running this option again with new topics will "
+                "replace the custom dictionary. Use the 'Dictionary Revert' "
+                "option to delete the custom dictionary and revert to the default one."), 
+                nargs="+", 
+                metavar="Desired Dictionary Topic(s)"
+            )
+            processGroup.add_argument("-dl", "--dictionaryLarge", 
+                help=("When used alongside the 'Dictionary' option, this "
+                "includes all words added to the custom dictionary, regardless of frequency. "
+                "Can result in long processing times when using the 'Process Autocorrect' option. "
+                "If this option has been used, and you want to shrink the dictionary later, "
+                "use 'build_dictionary.py -s', see 'build_dictionary.py -h' for "
+                "details and further options."), 
+                action="store_true",
+                dest="dictionary_large"
+            )
+            processGroup.add_argument("-dr", "--dictionaryRevert", 
+                help=("Delete the custom dictionary made using 'Process Dictionary' "
+                "and revert to the default dictionary for all future 'Process Autocorrect' processes. "
+                "To override a previous custom dictionary with a new one, use the "
+                "'Process Dictionary' option again with new arguments."), 
+                action="store_true",
+                dest="dictionary_revert"
+            )
+            processGroup.add_argument("-daw", "--dictionaryAddWord", 
+                help=("Add specific word(s) to the dictionary used by 'Process Autocorrect'. "
+                "Separate individual words with a single space. " 
+                "Alternatively, enter the path to a text file contianing a list of words. "
+                "One word per line, otherwise only the first word from each line will be added. "
+                "Frequency count separated by a space can be added on the same line "
+                "for improved performance."), 
+                nargs="+", 
+                metavar="Words to Add",
+                dest="dictionary_add_word"
+            )
+            processGroup.add_argument("-drw", "--dictionaryRemoveWord", 
+                help=("Remove specific word(s) from the dictionary used by 'Process Autocorrect'. "
+                "Separate individual words with a single space. "
+                "Alternatively, enter the path to a text file contianing a list of words. "
+                "One word per line, otherwise the first word from each line will be removed."), 
+                nargs="+", 
+                metavar="Words to Add",
+                dest="dictionary_remove_word"
+            )
+            
+            processGroup.add_argument("-l", "--lemmatize", 
+                help=("Lemmatize all words for both text output and Frequency Report "
+                "if 'Report' option is used. This converts words into their base form "
+                "for easier analysis. Eg., 'went' and 'going' => 'go', 'leaf' and "
+                "'leaves' => 'leaf', etc."), 
+                action="store_true"
+            )
+            
+            processTokenizers = processGroup.add_mutually_exclusive_group()
+            processTokenizers.add_argument("-ts", "--tokenizeSentences", 
+                help="Split the text into sentences and output a single sentence per CSV line.", 
+                action = "store_true",
+                dest="tokenize_sentences"
+            )
+            processTokenizers.add_argument("-tw", "--tokenizeWords", 
+                help ="Split the text into individual words and output a single word per CSV line.", 
+                action="store_true",
+                dest="tokenize_words"
+            )
+            
+            processWordLists = processGroup.add_mutually_exclusive_group()
+            processWordLists.add_argument("-po", "--processOnly", 
+                help=("Process only specified words. Either list words here separated "
+                "by a space, or modify the file 'options/ProcessOnly.txt' as per "
+                "instructions in that file and the Guide."), 
+                nargs="*", 
+                metavar="Only Process These Words",
+                dest="process_only"
+            )
+            processWordLists.add_argument("-pi", "--processIgnore", 
+                help=("Process all words except specified words to ignore. "
+                "By default ignores the most common English words. For custom word lists, "
+                "either list words here separated by a space, or modify the file "
+                "'options/ProcessIgnore.txt' as per instructions in that file and the Guide."), 
+                nargs="*", 
+                metavar="Ignore These Words",
+                dest="process_ignore"
+            )
+
+            processGroup.add_argument("-pp", "--processPunctuation", 
+                help=("Remove all punctuation, excluding internal apostrphes and hypens. "
+                "Retains all words and numbers, separated by a single space."), 
+                action="store_true",
+                dest="process_punctuation"
+            )
+            processGroup.add_argument("-pn", "--processNumbers", 
+                help=("Remove all words containing numbers. Used in conjunction with "
+                "the 'Process Punctuation' option, only words will be returned, "
+                "separated with spaces. Used alone, punctuation will be preserved."), 
+                action="store_true",
+                dest="process_numbers"
+            )
+            processGroup.add_argument("-pw", "--processWords", 
+                help=("Remove all words not found in the dictionary. "
+                "If used in conjuction with the 'Process Autocorrect' option, "
+                "an attempt will first be made to correct an unknown word to a known word, "
+                "and only words that cannot be corrected would be removed. "
+                "See the 'Process Dictionary' option for details on creating "
+                "a custom dictionary to check words against. If a custom dictionary "
+                "is not created, the default spell-check dictionary found at "
+                "options/Dictionary.txt will be used. See Guide for more details."), 
+                action="store_true",
+                dest="process_words"
+            )
+            processGroup.add_argument("-lc", "--lowercase", 
+                help="Convert all letters to lower-case for CSV output.", 
+                action ="store_true"
+            )
+
+            # Parse all args
+            if __name__ == "__main__":
+                args_parsed = parser.parse_args()
+            else:
+                args_split = [
+                    re.sub(r'"','', phrase) for phrase in 
+                    re.findall(r'([\w\-]+|".*?")', user_args)
+                ]
+                args_parsed = parser.parse_args(args_split)
+            self.args = vars(args_parsed)
+
     # START STARTUP BLOCK
-    def __init__(self):
+    def __init__(self, user_args=""):
 
-        self.arguments()
+        self.args = self.Arguments(user_args).args
 
-        self.inputFilePath = os.path.realpath(self.args.filepath)
+
+        self.inputFilePath = os.path.realpath(self.args["filepath"])
 
         # Identify the execution path right away
         self.homePath = os.path.dirname(os.path.realpath(__file__))
@@ -40,6 +394,7 @@ class PDFtoCSV:
         except IOError as e:
             self.error_found(e)
             
+
     # Check to see if Tesseract OCR has been installed as per README
     def find_tesseract(self):
 
@@ -124,20 +479,20 @@ class PDFtoCSV:
 
     # Process the files
     def run(self):
-        if self.args.processDictionaryRevert:
+        if self.args["dictionary_revert"]:
             try:
                 os.remove(BuildDict.customDictPath)
                 print("Custom dictionary removed, default dictionary now active.")
             except:
                 print("Custom dictionary does not exist.")
-        if self.args.processDictionaryAddWord:
-            BuildDict().merge(BuildDict().customDictPath, " ".join(self.args.processDictionaryAddWord))
-        if self.args.processDictionaryRemoveWord:
-            BuildDict().remove(BuildDict().customDictPath, " ".join(self.args.processDictionaryRemoveWord))
-        if self.args.processDictionary:
+        if self.args["dictionary_add_word"]:
+            BuildDict().merge(BuildDict().customDictPath, " ".join(self.args["dictionary_add_word"]))
+        if self.args["dictionary_remove_word"]:
+            BuildDict().remove(BuildDict().customDictPath, " ".join(self.args["dictionary_remove_word"]))
+        if self.args["dictionary"]:
             self.dictionary()
         self.reportText = ""
-        if not self.args.split:
+        if not self.args["split"]:
             self.create_output(self.inputFilePath) # Create the output file
         self.completeWordCount = 0  # To keep track of all the words processed
         self.completePageCount = 0 # To keep track of all pages processed
@@ -145,19 +500,19 @@ class PDFtoCSV:
         self.correctedWords = list()
         for path in self.pathList:
             self.completeWordCount += self.process_file(path) # Process file and update wordcount
-        if self.args.report and not self.args.split:
+        if self.args["report"] and not self.args["split"]:
             self.report()
-        if self.args.processAutocorrect and self.args.processCorrections and not self.args.split:
+        if self.args["autocorrect"] and self.args["corrections"] and not self.args["split"]:
             self.corrections()
         self.dialog("end") # Print ending dialogue
 
     def dictionary(self):
         print("Building custom dictionary.")
         d = BuildDict()
-        d.get(self.args.processDictionary)
+        d.get(self.args["dictionary"])
         d.train(d.customSourcePath)
         d.merge(d.customDictPath,d.refDictPath)
-        if not self.args.processDictionaryLarge:
+        if not self.args["dictionary_large"]:
             limit = 1
             while len(open(d.customDictPath,"r").readlines()) > 70000:
                 d.shrink(d.customDictPath,limit)
@@ -183,17 +538,17 @@ class PDFtoCSV:
         # Create blank file with headers
         with open(self.outputPath, "w+", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
-            headers = self.args.fields
-            if "Raw Text" in headers and not self.args.processRaw:
+            headers = self.args["fields"]
+            if "Raw Text" in headers and not self.args["source_text"]:
                 headers.remove("Raw Text")
-            if self.args.processTokenizeSentences or self.args.processTokenizeWords:
+            if self.args["tokenize_sentences"] or self.args["tokenize_words"]:
                 i=0
                 for header in headers:
                     if "Page Number" in header:
                         i = headers.index(header)
                 if i > 0:
                     headers.insert(i+1, "Sentence Number")
-                    if self.args.processTokenizeWords:
+                    if self.args["tokenize_words"]:
                         headers.insert(i+2, "Word Number")
                         if "Word Count" in headers:
                             j = headers.index("Word Count")
@@ -203,13 +558,13 @@ class PDFtoCSV:
             while headers.count("Custom Text") > 0:
                 i = headers.index("Custom Text")
                 headers.remove("Custom Text")
-                headers.insert(i,self.args.customTitle)
+                headers.insert(i,self.args["custom_title"])
             outputCSVWriter.writerow(headers)
         
-        if self.args.report or self.args.reportFile or self.args.reportPage:
+        if self.args["report"] or self.args["report_file"] or self.args["report_page"]:
             with open(self.reportPath, "w+", newline='') as outputFile:
                 outputCSVWriter = csv.writer(outputFile, dialect='excel')
-        if self.args.processAutocorrect and self.args.processCorrections:
+        if self.args["autocorrect"] and self.args["corrections"]:
             with open(self.correctionsPath, "w+", newline='') as outputFile:
                 outputCSVWriter = csv.writer(outputFile, dialect='excel')
                 outputCSVWriter.writerow(["Original Word","Corrected","Correction","Confidence"])
@@ -218,7 +573,7 @@ class PDFtoCSV:
     def process_file(self, filePath):
         self.filename = os.path.basename(filePath)
 
-        if self.args.split:
+        if self.args["split"]:
             self.create_output(filePath)
 
         self.pdf = fitz.open(filePath)   # Open the PDF with MuPDF
@@ -238,7 +593,7 @@ class PDFtoCSV:
             self.pageStart = time.perf_counter()    # Record time page started (OCR pages can take a long time)
             self.pageNum = page.number
             
-            if len(self.args.pages) == 0 or self.pageNum+1 in self.args.pages:  # Process unless not a specified page
+            if len(self.args["pages"]) == 0 or self.pageNum+1 in self.args["pages"]:  # Process unless not a specified page
                 self.completePageCount += 1
 
                 csvLine = list()
@@ -253,28 +608,28 @@ class PDFtoCSV:
                 self.pageWordCount = len(pageText.split())
                 self.totalWordCount += self.pageWordCount # Update total file word count
 
-                if self.args.processAutocorrect:
+                if self.args["autocorrect"]:
                     correctText = self.autocorrect(pageBlob,"correct")
                     pageText = correctText
 
-                if self.args.processLemmatize:
+                if self.args["lemmatize"]:
                     pageText = self.lemmatize(pageText)
 
-                if self.args.processTokenizeSentences or self.args.processTokenizeWords:
+                if self.args["tokenize_sentences"] or self.args["tokenize_words"]:
                     sentences = TextBlob(pageText).sentences
 
-                if self.args.processPunctuation:
+                if self.args["process_punctuation"]:
                     pageText = " ".join(TextBlob(pageText).words)
                     pageText = re.sub(r"[^\w\s'-]|_|\^|\\", "", pageText)
-                if self.args.processNumbers:
+                if self.args["process_numbers"]:
                     pageText = re.sub(r"\d", "", pageText)
-                if self.args.processWords:
+                if self.args["process_words"]:
                     pageText = self.autocorrect(TextBlob(pageText), "remove")
-                if self.args.processLowerCase:
+                if self.args["lowercase"]:
                     pageText = pageText.lower()
-                if self.args.report or self.args.reportPage or self.args.reportFile:
+                if self.args["report"] or self.args["report_page"] or self.args["report_file"]:
                     self.reportText += pageText + " "
-                    if self.args.reportPage:
+                    if self.args["report_page"]:
                         self.report()
 
                 pageText = self.edit_words(pageText,"process") # Remove words as specified
@@ -282,23 +637,23 @@ class PDFtoCSV:
                 self.pageEnd = time.perf_counter()  # Record time page ends
                 self.pageTime = self.pageEnd-self.pageStart
 
-                customData = re.sub(r"#", f"{self.pageNum+1}", self.args.customContent)
+                customData = re.sub(r"#", f"{self.pageNum+1}", self.args["custom_content"])
                 customData = re.sub(r"\$", f"{self.completePageCount}", customData)
                 customData = re.sub(r"@", self.filename, customData)
 
                 data = {"Source File Path" : filePath, "Source File Name" : self.filename, "Page Number (File)" : self.pageNum+1, 
                                     "Page Number (Overall)" : self.completePageCount, "Word Count" : [self.pageWordCount], 
                                     "Page Processing Duration" : f"{round(self.pageTime,3)} sec.", "Text" : [pageText], "Raw Text" : [pageBlob], "Process Timestamp" : time.asctime(),
-                                    self.args.customTitle : customData}
-                if self.args.processTokenizeSentences or self.args.processTokenizeWords:
+                                    self.args["custom_title"] : customData}
+                if self.args["tokenize_sentences"] or self.args["tokenize_words"]:
                     sentenceCount = [i+1 for i in range(len(sentences))]
                     sentenceWordCount = [len(s.words) for s in sentences]
                     data["Sentence Number"] = sentenceCount
-                    if self.args.processTokenizeSentences:
+                    if self.args["tokenize_sentences"]:
                         data["Word Count"] = sentenceWordCount
                     data["Text"] = sentences
                     data["Raw Text"] = sentencesBlob
-                    if self.args.processTokenizeWords:
+                    if self.args["tokenize_words"]:
                         wordIndex = list()
                         words = list()
                         sentenceCounts = list()
@@ -319,9 +674,9 @@ class PDFtoCSV:
 
                 for i in range(len(data["Text"])):
                     csvLine = list() # Build the output
-                    for f in self.args.fields:
+                    for f in self.args["fields"]:
                         if f == "Raw Text":
-                            if self.args.processRaw:
+                            if self.args["source_text"]:
                                 csvLine.append(data[f][i])
                         else:
                             if type(data[f]) is list:
@@ -341,9 +696,9 @@ class PDFtoCSV:
         with open(self.outputPath, "a", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
             outputCSVWriter.writerows(pages)
-        if self.args.reportFile or (self.args.split and self.args.report):
+        if self.args["report_file"] or (self.args["split"] and self.args["report"]):
             self.report()
-        if self.args.processAutocorrect and self.args.processCorrections and self.args.split:
+        if self.args["autocorrect"] and self.args["corrections"] and self.args["split"]:
             self.corrections()
 
         self.dialog("fileEnd")  # Show user statistics for completed file
@@ -377,7 +732,7 @@ class PDFtoCSV:
                 if len(list(spelling._known([w.lower()]))) == 0 and check[0][1] > -1:
                     self.correctedWords.append([w, True if check[0][1]>0 else False, corrected if check[0][1]>0 else "", check[0][1] if check[0][1]>0 else ""])
             elif mode == "remove":
-                if self.args.processAutocorrect:
+                if self.args["autocorrect"]:
                     if check[0][1] > 0 or check[0][1] == -1:
                         correctedText += separator + corrected
                 else:
@@ -394,13 +749,13 @@ class PDFtoCSV:
     # Get the text from a single page
     def read_page(self, page):
         # try to extract text
-        if self.args.thorough:
+        if self.args["thorough"]:
             text = self.thorough_page(page)
         else:
             text = page.getText()
 
             if len(text) < 1:   # OCR the page if there is no text or if forced
-                if self.args.accelerated:  # Skip if Accelerated option active
+                if self.args["accelerated"]:  # Skip if Accelerated option active
                     self.skippedPages = True
                 else:
                     text = self.ocr_page(page)
@@ -487,7 +842,7 @@ class PDFtoCSV:
 
         # Add words to the dictionary with a count of 1 or add one to count if word already counted
         for w in posList:
-            if self.args.reportPOS:
+            if self.args["report_pos"]:
                 word = w
             else:
                 word = w[0]
@@ -508,7 +863,7 @@ class PDFtoCSV:
         trimmedStats = {}
 
         # get limit from arg, only numbers and %
-        limit = re.sub(r"[^0-9%]", "", self.args.reportLimit)
+        limit = re.sub(r"[^0-9%]", "", self.args["report_limit"])
 
         # default to 100% if input doesn't make sense
         if len(limit) < 1 or ("%" in limit and len(limit) < 2):
@@ -540,7 +895,7 @@ class PDFtoCSV:
         finalStats = list()
 
         # Sort words by frequency if Report Sort arg active, alphabetically if not
-        if not self.args.reportSort:
+        if not self.args["report_sort"]:
             finalStats = [(word[0],word[1], count) if type(word) is tuple else (word, count) for (word,count) in sorted(trimmedStats.items())]
         else:
             finalStats = trimmedStats.items()
@@ -550,7 +905,7 @@ class PDFtoCSV:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
 
             # Source changes based on if it is split or not
-            if self.args.report and not self.args.split:
+            if self.args["report"] and not self.args["split"]:
                 src = self.inputFilePath
             else:
                 src = self.filename
@@ -559,12 +914,12 @@ class PDFtoCSV:
             outputCSVWriter.writerow(["Frequency Report of all words processed from {}".format(src)])  
 
             # Secondary header if reporting by each page 
-            if self.args.reportPage:
+            if self.args["report_page"]:
                 outputCSVWriter.writerow(["{} page {}/{}".format(self.filename, self.pageNum+1, len(self.pdf))])
             
             # Column headers
             headers = ["Word","Instances"]
-            if self.args.reportPOS:
+            if self.args["report_pos"]:
                 headers.insert(1,"POS")
             outputCSVWriter.writerow(headers)
 
@@ -585,13 +940,13 @@ class PDFtoCSV:
         if purpose == "report":
             ignorePath = reportIgnorePath
             onlyPath = reportOnlyPath
-            ignoreList = self.args.reportIgnore
-            onlyList = self.args.reportOnly
+            ignoreList = self.args["report_ignore"]
+            onlyList = self.args["report_only"]
         elif purpose == "process":
             ignorePath = processIgnorePath
             onlyPath = processOnlyPath
-            ignoreList = self.args.processIgnore
-            onlyList = self.args.processOnly
+            ignoreList = self.args["process_ignore"]
+            onlyList = self.args["process_only"]
 
         # Remove all but specified words if Report Only arg is used
         if onlyList is not None:
@@ -719,21 +1074,22 @@ class PDFtoCSV:
                 plural = "s"
             
             if stage == "start":    # Starting dialogue
-                print("Processing all PDF files in folder {} ({} File{})".format(self.inputFilePath, len(self.pathList), plural))
+                if not self.args["quiet"]:
+                    print("Processing all PDF files in folder {} ({} File{})".format(self.inputFilePath, len(self.pathList), plural))
                 self.dirTimeStart = time.perf_counter() # Record starting time
             elif stage == "end":    # Ending dialogue
                 dirTimeEnd = time.perf_counter()   # Record ending time
                 dirTime = round(dirTimeEnd-self.dirTimeStart, 3)  # Calculate processing time
-                print()
-                if not self.args.split:
-                    print("The file {} contains all of the text extracted from from all PDF files in {}.".format(self.outputPath, self.inputFilePath))
-                    if self.args.report or self.args.reportFile or self.args.reportPage:
-                        print("The file {} contains a frequency report of all words processed.".format(self.reportPath))
-                else:
-                    print("Each file in {} has breen processed and the extracted text is contained in the accompanying CSV file.".format(self.inputFilePath))
-                    if self.args.report or self.args.reportFile or self.args.reportPage:
-                        print("Each file also contains an accompanying CSV file with a frequency report of each word processed.")
-                if not self.args.quiet:
+                if not self.args["quiet"]:
+                    print()
+                    if not self.args["split"]:
+                        print("The file {} contains all of the text extracted from from all PDF files in {}.".format(self.outputPath, self.inputFilePath))
+                        if self.args["report"] or self.args["report_file"] or self.args["report_page"]:
+                            print("The file {} contains a frequency report of all words processed.".format(self.reportPath))
+                    else:
+                        print("Each file in {} has breen processed and the extracted text is contained in the accompanying CSV file.".format(self.inputFilePath))
+                        if self.args["report"] or self.args["report_file"] or self.args["report_page"]:
+                            print("Each file also contains an accompanying CSV file with a frequency report of each word processed.")
                     print("{} file{} ({} words) were processed in {} seconds. That is an average of {} seconds/file".format(len(self.pathList), plural, self.completeWordCount, dirTime, round(dirTime/len(self.pathList),3)))
         
         if stage[:4] == "file":    # The dialog relates to the processing of the file
@@ -742,31 +1098,31 @@ class PDFtoCSV:
             else:
                 plural = "s"
             if stage == "fileStart":    # File start dialogue
-                if not self.args.quiet:
+                if not self.args["quiet"]:
                     print ()
                     print("Processing {} ({} page{})".format(self.filename,len(self.pdf),plural))
-                    if not self.args.verbose:
+                    if not self.args["verbose"]:
                         print("Progress: 0%|", end="", flush=True)  # Set up progress bar
                 self.fileStartTime = time.perf_counter()    # Record file start time
             elif stage == "fileEnd":    # File completed dialogue
                 fileEndTime = time.perf_counter()   # Record file end time
                 fileTime = round(fileEndTime - self.fileStartTime, 3)
-                if len(self.args.pages) > 0:
-                    pagesProcessed = len(self.args.pages)
+                if len(self.args["pages"]) > 0:
+                    pagesProcessed = len(self.args["pages"])
                 else:
                     pagesProcessed = len(self.pdf)
-                if not self.args.quiet or self.inputType != "dir":
+                if not self.args["quiet"] or self.inputType != "dir":
                     print("Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(self.filename, fileTime, pagesProcessed, plural, self.totalWordCount, round(fileTime/pagesProcessed,3)))
-                if self.skippedPages and not self.args.quiet:
-                    if self.args.accelerated:
+                if self.skippedPages and not self.args["quiet"]:
+                    if self.args["accelerated"]:
                         reason = "Accellerated Mode"
-                    if len(self.args.pages) > 0:
+                    if len(self.args["pages"]) > 0:
                         reason = "to only process certain pages"
                     print("Some pages were skipped because you chose {}. See Guide for details.".format(reason))
        
-        if not self.args.quiet:
+        if not self.args["quiet"]:
             if stage == "ocr":  # Explain to the user that we are now dealing with OCR and why
-                if self.args.thorough:
+                if self.args["thorough"]:
                     reason = "Thorough Mode has been chosen, see Guide for details."
                 else:
                     reason = "it contains non-machine readable text."
@@ -775,8 +1131,8 @@ class PDFtoCSV:
             if stage[:4] == "page":
                 if self.pageNum >= self.percent:    # If we passed the next percentage marker, set a new one
                     self.percent = self.percent + self.fivePercent
-                if self.fileMethod == "ocr" or self.args.verbose:    # Because OCR takes longer, give an update of time and words after each page
-                    if self.args.verbose:
+                if self.fileMethod == "ocr" or self.args["verbose"]:    # Because OCR takes longer, give an update of time and words after each page
+                    if self.args["verbose"]:
                         lead = ""
                         rtn = "\n"
                     else:
@@ -790,122 +1146,15 @@ class PDFtoCSV:
                     if self.pageNum >= self.percent:    # If we passed the next percentage marker, print a marker set a new one
                         print("=", end="", flush=True)
                         self.percent = self.percent + self.fivePercent
-                if self.pageNum+1 == len(self.pdf) and not self.args.verbose: # If we are at the end of the file, ensure there is a full progress bar
+                if self.pageNum+1 == len(self.pdf) and not self.args["verbose"]: # If we are at the end of the file, ensure there is a full progress bar
                     print("\rProgress: 0%|====================|100%                ")
 
     # Error dialog
     def error_found(self, e):
         print("Sorry! There's been a problem. {} and try again.".format(e.strerror))
 
-    # Argument processing
-    def arguments(self):
-
-        # Initialize parser
-        parser = argparse.ArgumentParser()
-        
-        # Require path argument
-        parser.add_argument("filepath", help="The path to the file or folder you would like to process. Must be verbatim and enclosed in quotes. See guide for details.")
-        
-        # Arguments that augment the speed of the program
-        speedGroup = parser.add_mutually_exclusive_group()
-        # Accelerated (Ignore OCR pages)
-        speedGroup.add_argument("-a", "--accelerated", help="Ignore any pages that require time-consuming OCR to process. The program will run very quickly, but might miss some text, depending on your source file formats.", action="store_true")
-        # Thorough (OCR all pages)
-        speedGroup.add_argument("-t", "--thorough", help="Force Optical Character Recognition (OCR) for all pages. This will be much slower than the default option, but is the most thorough.", action="store_true")
-
-        # Arguments related to progress output
-        progressGroup = parser.add_mutually_exclusive_group()
-        # Quiet Mode (no progress updates)
-        progressGroup.add_argument("-q", "--quiet", help="Supress progress updates about individual files. There can be a long period of time with no progress updates as the progam runs.", action="store_true")
-        # Verbose Mode (progress update per page)
-        progressGroup.add_argument("-v", "--verbose", help="Show detailed progress updates for each page. This can result in a lot of progress updates for larger files.", action="store_true")
-
-        fieldGroup = parser.add_argument_group("Field Options", "This mode allows for the customization of the fields used for the CSV columns. See Guide for usage and syntax.")
-        
-        class FieldAction(argparse.Action):
-            def __call__(self, parser, namespace, values, option_string=None):
-                fields = dict(p="Source File Path", n="Source File Name", f="Page Number (File)", 
-                                o="Page Number (Overall)", w="Word Count",d="Page Processing Duration", 
-                                t="Text", s="Process Timestamp", c="Custom Text", r="Raw Text")
-                outputFields = list()
-                fieldString = re.sub(r"[^pnfowdtscr]","",values.lower())
-                if len(fieldString) < 1:
-                    print("No valid fields selected. Please refer to the Guide for help on using this function. Default fields will be used.")
-                    fieldString = "pfwtr"
-                for c in fieldString:
-                    outputFields.append(fields[c])           
-                setattr(namespace, self.dest, outputFields)     
-
-        fieldGroup.add_argument("-f", "--fields", help="The string of letters representing the fields required in the order desired. See Guide for details", default=['Source File Path', 'Page Number (File)', 'Word Count', 'Text', 'Raw Text'], action=FieldAction, metavar="Desired Field Order")
-        customGroup = parser.add_argument_group("Custom Feild", "These options allow for the creation of a custom field in the CSV output. The indicator 'c' must be included in the field string for this field to be included. See Guide for details.")
-        customGroup.add_argument("-ct", "--customTitle", help="Title of custom field. Default title is 'Custom' if not specified.", default="Custom", metavar="Desired Custom Title")
-        customGroup.add_argument("-cc", "--customContent", help="Content of custom field to be repeated for each page. Include @ for file name, # for file page number and $ for overall page number. Default is a blank cell if not specified.", default="", metavar="Desired Custom Content")
-        
-        class PageAction(argparse.Action):
-            def __call__(self, parser, namespace, values, option_string=None):
-                pages = list()
-                for p in values:
-                    p = re.sub(r"[^0-9\-]","", p)
-                    if "-" in p:
-                        rng = range(int(p.split("-")[0]),int(p.split("-")[1])+1)
-                        for i in rng:
-                            pages.append(i)
-                    elif len(p) > 0:
-                        pages.append(int(p))
-                setattr(namespace, self.dest, pages)
-
-        parser.add_argument("-p", "--pages", help="Only retrieve text from specified pages. List individual page numbers or page ranges in the format 1-10.", nargs="+", action=PageAction, default=[], metavar="Desired Page Numbers")
-
-        parser.add_argument("-s", "--split", help="Create a separate output CSV for every PDF file instead of the default of one comprehensive output CSV.", action = "store_true")
-        
-        reportGroup = parser.add_argument_group("Report Mode", "Create a separate CSV with a report of frequency of each word present in the text.")
-        reportGroupDetails = reportGroup.add_mutually_exclusive_group()
-        reportGroupDetails.add_argument("-r", "--report", help="Create one report with cumulative counts for all words in all files. This will create a report per file if 'Split Mode' is also used.", action="store_true")
-        reportGroupDetails.add_argument("-rp", "--reportPage", help="Create a separate report for each page.", action="store_true")
-        reportGroupDetails.add_argument("-rf", "--reportFile", help="Create a separate report for each file.", action="store_true")
-        reportGroup.add_argument("-rs", "--reportSort", help="Sort the words by frequency in the report instead of alphabetically.", action="store_true")
-        reportGroup.add_argument("-rl", "--reportLimit", help="Only include words above a certain frequency. Numbers alone represent minimum frequency, numbers with a percentage represent the upper given percentile.", default="100%", metavar="Desired Report Limit")
-        reportGroup.add_argument("-rpos", "--reportPOS", help="Count homonyms separately if they represent different parts of speech. Eg., without this option 'Can I have a can of juice?' would count two instances of 'can'. With this option, it would count once instance of 'can (noun)' and one of 'can (verb)'.", action="store_true")
-        reportWordLists = reportGroup.add_mutually_exclusive_group()
-        reportWordLists.add_argument("-ro", "--reportOnly", help="Report only specified words. Either list words here separated by a space, or modify the file 'options/ReportOnly.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Only Report These Words")
-        reportWordLists.add_argument("-ri", "--reportIgnore", help="Report all words except specified words to ignore. By default ignores the most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ReportIgnore.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Ignore These Words")
-
-        processGroup = parser.add_argument_group("Processing Options", "These options allow for common Natural Language Processing text processing operations to be performed on the source text before storing it in the CSV file.")
-        processGroup.add_argument("-pa", "--processAutocorrect", help="Apply an autocorrect alogorithm to the source text, correcting some of the errors from OCR or typos, approximately 70 percent accuracy. Use 'Process Raw' option to include original text in output as well.", action="store_true")
-        processGroup.add_argument("-pr", "--processRaw", help="Include the raw, unprocessed text alongside the processed text in the output CSV.", action="store_true")
-        processGroup.add_argument("-pc", "--processCorrections", help="Create a separate file that contains all of the words that were not found in the dictionary when using the 'Process Autocorrect' option, and whether it was corrected.", action="store_true")
-        
-        processGroup.add_argument("-pd", "--processDictionary", help=("Create a custom dictionary specialized for a given subject matter, to be used by the 'Process Autocorrect' option. List topics here separated by a space, with multiple words surrounded by quotation marks. Topics should correspond to the titles of their respective articles on https://en.wikipedia.org. " 
-            "By default, uncommon words are removed for the sake of efficiency if the new dictionary is more than twice as large as the default dictionary. Disable this process by including the 'Process Dictioanry Large' option. "
-            "This option needs to be run only once and all future 'Process Autocorrect' uses will use the new custom dictionary. Running this option again with new topics will replace the custom dictionary. Use the 'Process Dictionary Revert' option to delete the custom dictionary and revert to the default one."), nargs="+", metavar="Desired Dictionary Topic(s)")
-        processGroup.add_argument("-pdl", "--processDictionaryLarge", help=("When used alongside the 'Process Dictionary' option, this includes all words added to the custom dictionary, regardless of frequency. Can result in long processing times when using the 'Process Autocorrect' option. "
-            "If this option has been used, and you want to shrink the dictionary later, use 'build_dictionary.py -s', see 'build_dictionary.py -h' for details and further options."), action="store_true")
-        processGroup.add_argument("-pdr", "--processDictionaryRevert", help=("Delete the custom dictionary made using 'Process Dictionary' and revert to the default dictionary for all future 'Process Autocorrect' processes. "
-            "To override a previous custom dictionary with a new one, use the 'Process Dictionary' option again with new arguments."), action="store_true")
-        processGroup.add_argument("-pdaw", "--processDictionaryAddWord", help=("Add specific word(s) to the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. " 
-            "Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise only the first word from each line will be added. Frequency count separated by a space can be added on the same line for improved performance."), nargs="+", metavar="Words to Add")
-        processGroup.add_argument("-pdrw", "--processDictionaryRemoveWord", help=("Remove specific word(s) from the dictionary used by 'Process Autocorrect'. Separate individual words with a single space. "
-            "Alternatively, enter the path to a text file contianing a list of words. One word per line, otherwise the first word from each line will be removed."), nargs="+", metavar="Words to Add")
-        
-        processGroup.add_argument("-pl", "--processLemmatize", help="Lemmatize all words for both text output and Frequency Report if 'Report' option is used. This converts words into their base form for easier analysis. Eg., 'went' and 'going' => 'go', 'leaf' and 'leaves' => 'leaf', etc.", action="store_true")
-        
-        processTokenizers = processGroup.add_mutually_exclusive_group()
-        processTokenizers.add_argument("-pts", "--processTokenizeSentences", help="Split the text into sentences and output a single sentence per CSV line.", action = "store_true")
-        processTokenizers.add_argument("-ptw", "--processTokenizeWords", help ="Split the text into individual words and output a single word per CSV line.", action="store_true")
-        
-        processWordLists = processGroup.add_mutually_exclusive_group()
-        processWordLists.add_argument("-po", "--processOnly", help="Process only specified words. Either list words here separated by a space, or modify the file 'options/ProcessOnly.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Only Process These Words")
-        processWordLists.add_argument("-pi", "--processIgnore", help="Process all words except specified words to ignore. By default ignores the most common English words. For custom word lists, either list words here separated by a space, or modify the file 'options/ProcessIgnore.txt' as per instructions in that file and the Guide.", nargs="*", metavar="Ignore These Words")
-
-        processGroup.add_argument("-pp", "--processPunctuation", help="Remove all punctuation, excluding internal apostrphes and hypens. Retains all words and numbers, separated by a single space.", action="store_true")
-        processGroup.add_argument("-pn", "--processNumbers", help="Remove all words containing numbers. Used in conjunction with the 'Process Punctuation' option, only words will be returned, separated with spaces. Used alone, punctuation will be preserved.", action="store_true")
-        processGroup.add_argument("-pw", "--processWords", help=("Remove all words not found in the dictionary. If used in conjuction with the 'Process Autocorrect' option, an attempt will first be made to correct an unknown word to a known word, and only words that cannot be corrected would be removed. "
-            "See the 'Process Dictionary' option for details on creating a custom dictionary to check words against. If a custom dictionary is not created, the default spell-check dictionary found at options/Dictionary.txt will be used. See Guide for more details."), action="store_true")
-        processGroup.add_argument("-plc", "--processLowerCase", help="Convert all letters to lower-case for CSV output.", action ="store_true")
-
-        # Parse all args
-        self.args = parser.parse_args()
 
 
-test = PDFtoCSV()
-test.run()
+if __name__ == "__main__":
+    test = PDFtoCSV()
+    test.run()
