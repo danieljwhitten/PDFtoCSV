@@ -375,58 +375,65 @@ class PDFtoCSV:
     def __init__(self, user_args=""):
 
         self.args = self.Arguments(user_args).args
-
-
-        self.inputFilePath = os.path.realpath(self.args["filepath"])
+        self.input_filepath = os.path.realpath(self.args["filepath"])
 
         # Identify the execution path right away
-        self.homePath = os.path.dirname(os.path.realpath(__file__))
+        self.homepath = os.path.dirname(os.path.realpath(__file__))
 
         # Run basic setup to confirm input can be processed
         try:
             # Confirm that Tesseract OCR is properly installed right away
             self.find_tesseract()
             # Identify whether the input is a single file or a directory
-            self.inputType = self.file_or_dir(self.inputFilePath)
+            self.input_type = self.file_or_dir(self.input_filepath)
             # Compile list of all valid PDF files from input
-            self.pathList = self.get_file_list(self.inputFilePath, self.inputType)
+            self.path_list = self.get_file_list(self.input_filepath, self.input_type)
 
-        except IOError as e:
-            self.error_found(e)
+        except IOError as err:
+            self.error_found(err)
             
 
     # Check to see if Tesseract OCR has been installed as per README
     def find_tesseract(self):
 
         # Identify default locations for Windows or Mac
-        operatingSystem = sys.platform
-        if operatingSystem == "win32":
-            tesseractPath = r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe'
-        elif operatingSystem == "darwin":
-            tesseractPath = r'/usr/local/bin/tesseract'
+        operating_system = sys.platform
+        if operating_system == "win32":
+            tesseract_path = r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe'
+        elif operating_system == "darwin":
+            tesseract_path = r'/usr/local/bin/tesseract'
         else:
-            tesseractPath = r'neitherWin32NorMac'
+            tesseract_path = r'neitherWin32NorMac'
         
         # If neither path exists, check the text file for a custom path, as per README
-        if not os.path.isfile(tesseractPath):
-            with open(os.path.join(self.homePath,"tesseractPath.txt"), "r") as tesseractPathFile:
-                tesseractPath = tesseractPathFile.readline().strip()
+        if not os.path.isfile(tesseract_path):
+            with open(os.path.join(self.homepath,"tesseractPath.txt"), "r") as tesseract_path_file:
+                tesseract_path = tesseract_path_file.readline().strip()
         
         # If the file still doesn't exist, raise the error
-        if not os.path.isfile(tesseractPath):
+        if not os.path.isfile(tesseract_path):
             ex = IOError()
-            ex.strerror = "I could not find your Tesseract-OCR installation in the default location.\nThe program will attempt to read the file(s) if they are machine-readable, but will return an error if any pages require OCR.\nIf you have not installed Tesseract-OCR, please refer to the Guide to do so.\nIf you have installed it, please locate the executable file (\"tesseract.exe\" in Windows, \"tesseract\" in MacOS) and paste the full path as the first line of the file \"tesseractPath.txt\" in the same folder as this program"
+            ex.strerror = (
+                "I could not find your Tesseract-OCR installation "
+                "in the default location.\nThe program will attempt to read the "
+                "file(s) if they are machine-readable, but will return an error "
+                "if any pages require OCR.\nIf you have not installed Tesseract-OCR, "
+                "please refer to the Guide to do so.\nIf you have installed it, "
+                "please locate the executable file (\"tesseract.exe\" in Windows,"
+                " \"tesseract\" in MacOS) and paste the full path as the first line "
+                "of the file \"tesseractPath.txt\" in the same folder as this program"
+            )
             raise ex
         else:
             # Point PyTesseract to Tesseract executable
-            pytesseract.pytesseract.tesseract_cmd = tesseractPath
+            pytesseract.pytesseract.tesseract_cmd = tesseract_path
 
     # Check to see if the input is a valid file or a valid dir, return either or raise an error
     def file_or_dir(self, path):
-        isFile = os.path.isfile(path)
-        if not isFile:
-            isDir = os.path.isdir(path)
-            if isDir:
+        is_file = os.path.isfile(path)
+        if not is_file:
+            is_dir = os.path.isdir(path)
+            if is_dir:
                 return "dir"
             else:
                 ex = IOError()
@@ -445,11 +452,17 @@ class PDFtoCSV:
             while len(dirs) > 0:
                 for(dirpath, dirnames, filenames) in os.walk(dirs.pop()):
                     dirs.extend(dirnames)
-                    files.extend(map(lambda n: os.path.join(*n), zip([dirpath] * len(filenames), filenames)))
+                    files.extend(
+                        map(
+                            lambda n: os.path.join(*n), zip(
+                                [dirpath] * len(filenames), filenames
+                                )
+                            )
+                    )
         else:
             files.append(path)
 
-        pdfFiles = list()
+        pdf_files = list()
 
         # Check all files in the file list, and create a new list with only valid PDF files (can be opened by MuPDF)
         for file in files:
@@ -457,49 +470,54 @@ class PDFtoCSV:
                 try:
                     pdf = fitz.open(file)
                     pdf.close()
-                    pdfFiles.append(file)
+                    pdf_files.append(file)
                 except:
                     pass
 
         # Ensure the list is in natural reading order (as would be seen in the file manager)
-        pdfFiles = natsorted(pdfFiles)
+        pdf_files = natsorted(pdf_files)
 
         # Raise an error if there are no valid PDF files
-        if len(pdfFiles) == 0:
+        if len(pdf_files) == 0:
             ex = IOError()
-            pdfErr = "The {} you have entered {} PDF file{}. Please enter a PDF file or directory containing PDF files"
+            pdf_err = ("The {} you have entered {} PDF file{}. "
+                "Please enter a PDF file or directory containing PDF files")
             if inputType == "file":
-                ex.strerror = pdfErr.format("file", "is not a", "")
+                ex.strerror = pdf_err.format("file", "is not a", "")
             else:
-                ex.strerror = pdfErr.format("folder", "does not contain any", "s")
+                ex.strerror = pdf_err.format("folder", "does not contain any", "s")
             raise ex
 
-        return pdfFiles
+        return pdf_files
     # END STARTUP BLOCK
 
     # Process the files
     def run(self):
         if self.args["dictionary_revert"]:
             try:
-                os.remove(BuildDict.customDictPath)
+                os.remove(BuildDict.path_custom_dict)
                 print("Custom dictionary removed, default dictionary now active.")
             except:
                 print("Custom dictionary does not exist.")
         if self.args["dictionary_add_word"]:
-            BuildDict().merge(BuildDict().customDictPath, " ".join(self.args["dictionary_add_word"]))
+            BuildDict().merge(
+                BuildDict().path_custom_dict, " ".join(self.args["dictionary_add_word"])
+            )
         if self.args["dictionary_remove_word"]:
-            BuildDict().remove(BuildDict().customDictPath, " ".join(self.args["dictionary_remove_word"]))
+            BuildDict().remove(
+                BuildDict().path_custom_dict, " ".join(self.args["dictionary_remove_word"])
+            )
         if self.args["dictionary"]:
             self.dictionary()
-        self.reportText = ""
+        self.report_text = ""
         if not self.args["split"]:
-            self.create_output(self.inputFilePath) # Create the output file
-        self.completeWordCount = 0  # To keep track of all the words processed
-        self.completePageCount = 0 # To keep track of all pages processed
+            self.create_output(self.input_filepath) # Create the output file
+        self.complete_wordcount = 0  # To keep track of all the words processed
+        self.pagecount_complete = 0 # To keep track of all pages processed
         self.dialog("start") # Print starting dialog
-        self.correctedWords = list()
-        for path in self.pathList:
-            self.completeWordCount += self.process_file(path) # Process file and update wordcount
+        self.words_corrected = list()
+        for path in self.path_list:
+            self.complete_wordcount += self.process_file(path) # Process file and update wordcount
         if self.args["report"] and not self.args["split"]:
             self.report()
         if self.args["autocorrect"] and self.args["corrections"] and not self.args["split"]:
@@ -510,12 +528,12 @@ class PDFtoCSV:
         print("Building custom dictionary.")
         d = BuildDict()
         d.get(self.args["dictionary"])
-        d.train(d.customSourcePath)
-        d.merge(d.customDictPath,d.refDictPath)
+        d.train(d.path_custom_source)
+        d.merge(d.path_custom_dict,d.path_ref_dict)
         if not self.args["dictionary_large"]:
             limit = 1
-            while len(open(d.customDictPath,"r").readlines()) > 70000:
-                d.shrink(d.customDictPath,limit)
+            while len(open(d.path_custom_dict,"r").readlines()) > 70000:
+                d.shrink(d.path_custom_dict,limit)
                 limit += 1
 
     # Crete a CSV file for the output, given the same name as the input path, and in the same location
@@ -526,18 +544,18 @@ class PDFtoCSV:
             path = path[:-1]
 
         # Create the file in the same location as the input path    
-        outputDir = os.path.dirname(path)
+        output_dir = os.path.dirname(path)
 
         # Give the output file the same name as the input path
-        outputFilename = os.path.splitext(os.path.basename(path))[0] + ".csv"
+        output_filename = os.path.splitext(os.path.basename(path))[0] + ".csv"
 
-        self.outputPath = os.path.join(outputDir,outputFilename)
-        self.reportPath = self.outputPath[:-4] + "-FR" + self.outputPath[-4:]
-        self.correctionsPath = self.outputPath[:-4] + "-Corrections" + self.outputPath[-4:]
+        self.output_path = os.path.join(output_dir,output_filename)
+        self.report_path = self.output_path[:-4] + "-FR" + self.output_path[-4:]
+        self.corrections_path = self.output_path[:-4] + "-Corrections" + self.output_path[-4:]
 
         # Create blank file with headers
-        with open(self.outputPath, "w+", newline='') as outputFile:
-            outputCSVWriter = csv.writer(outputFile, dialect='excel')
+        with open(self.output_path, "w+", newline='') as output_file:
+            output_CSV_writer = csv.writer(output_file, dialect='excel')
             headers = self.args["fields"]
             if "Raw Text" in headers and not self.args["source_text"]:
                 headers.remove("Raw Text")
@@ -559,15 +577,15 @@ class PDFtoCSV:
                 i = headers.index("Custom Text")
                 headers.remove("Custom Text")
                 headers.insert(i,self.args["custom_title"])
-            outputCSVWriter.writerow(headers)
+            output_CSV_writer.writerow(headers)
         
         if self.args["report"] or self.args["report_file"] or self.args["report_page"]:
-            with open(self.reportPath, "w+", newline='') as outputFile:
-                outputCSVWriter = csv.writer(outputFile, dialect='excel')
+            with open(self.report_path, "w+", newline='') as output_file:
+                output_CSV_writer = csv.writer(output_file, dialect='excel')
         if self.args["autocorrect"] and self.args["corrections"]:
-            with open(self.correctionsPath, "w+", newline='') as outputFile:
-                outputCSVWriter = csv.writer(outputFile, dialect='excel')
-                outputCSVWriter.writerow(["Original Word","Corrected","Correction","Confidence"])
+            with open(self.corrections_path, "w+", newline='') as output_file:
+                output_CSV_writer = csv.writer(output_file, dialect='excel')
+                output_CSV_writer.writerow(["Original Word","Corrected","Correction","Confidence"])
     
     # Process each file in its entirety
     def process_file(self, filePath):
@@ -577,123 +595,130 @@ class PDFtoCSV:
             self.create_output(filePath)
 
         self.pdf = fitz.open(filePath)   # Open the PDF with MuPDF
-        self.skippedPages = False   # Reset
+        self.skipped_pages = False   # Reset
         self.dialog("fileStart")
         
         pages = list()
-        self.totalWordCount = 0 # Keep track of all the words processed in the file
+        self.wordcount_total = 0 # Keep track of all the words processed in the file
         
         self.fivePercent = len(self.pdf)/20 # Determine the 5% intervals for the progress bar
         self.percent = self.fivePercent   # Next percentage marker
-        self.percentCount = 0    # How many 5% intervals have passed
+        self.percent_count = 0    # How many 5% intervals have passed
         
-        self.fileMethod = "text"  # Assume machine readable text, will change to OCR if OCR detected
+        self.file_method = "text"  # Assume machine readable text, will change to OCR if OCR detected
 
         for page in self.pdf:   # process one page at a time
-            self.pageStart = time.perf_counter()    # Record time page started (OCR pages can take a long time)
-            self.pageNum = page.number
+            self.page_start = time.perf_counter()    # Record time page started (OCR pages can take a long time)
+            self.page_num = page.number
             
-            if len(self.args["pages"]) == 0 or self.pageNum+1 in self.args["pages"]:  # Process unless not a specified page
-                self.completePageCount += 1
+            if len(self.args["pages"]) == 0 or self.page_num+1 in self.args["pages"]:  # Process unless not a specified page
+                self.pagecount_complete += 1
 
-                csvLine = list()
+                csv_line = list()
 
                 # Get the text and word count from the page
-                pageText = self.read_page(page)
-                pageBlob = TextBlob(pageText)
-                sentencesBlob = pageBlob.sentences
-                wordsBlob = list()
-                for s in sentencesBlob:
-                    wordsBlob += s.words
-                self.pageWordCount = len(pageText.split())
-                self.totalWordCount += self.pageWordCount # Update total file word count
+                page_text = self.read_page(page)
+                page_blob = TextBlob(page_text)
+                sentences_blob = page_blob.sentences
+                words_blob = list()
+                for s in sentences_blob:
+                    words_blob += s.words
+                self.wordcount_page = len(page_text.split())
+                self.wordcount_total += self.wordcount_page # Update total file word count
 
                 if self.args["autocorrect"]:
-                    correctText = self.autocorrect(pageBlob,"correct")
-                    pageText = correctText
+                    text_correct = self.autocorrect(page_blob,"correct")
+                    page_text = text_correct
 
                 if self.args["lemmatize"]:
-                    pageText = self.lemmatize(pageText)
+                    page_text = self.lemmatize(page_text)
 
                 if self.args["tokenize_sentences"] or self.args["tokenize_words"]:
-                    sentences = TextBlob(pageText).sentences
+                    sentences = TextBlob(page_text).sentences
 
                 if self.args["process_punctuation"]:
-                    pageText = " ".join(TextBlob(pageText).words)
-                    pageText = re.sub(r"[^\w\s'-]|_|\^|\\", "", pageText)
+                    page_text = " ".join(TextBlob(page_text).words)
+                    page_text = re.sub(r"[^\w\s'-]|_|\^|\\", "", page_text)
                 if self.args["process_numbers"]:
-                    pageText = re.sub(r"\d", "", pageText)
+                    page_text = re.sub(r"\d", "", page_text)
                 if self.args["process_words"]:
-                    pageText = self.autocorrect(TextBlob(pageText), "remove")
+                    page_text = self.autocorrect(TextBlob(page_text), "remove")
                 if self.args["lowercase"]:
-                    pageText = pageText.lower()
+                    page_text = page_text.lower()
                 if self.args["report"] or self.args["report_page"] or self.args["report_file"]:
-                    self.reportText += pageText + " "
+                    self.report_text += page_text + " "
                     if self.args["report_page"]:
                         self.report()
 
-                pageText = self.edit_words(pageText,"process") # Remove words as specified
+                page_text = self.edit_words(page_text,"process") # Remove words as specified
 
-                self.pageEnd = time.perf_counter()  # Record time page ends
-                self.pageTime = self.pageEnd-self.pageStart
+                self.page_end = time.perf_counter()  # Record time page ends
+                self.page_time = self.page_end-self.page_start
 
-                customData = re.sub(r"#", f"{self.pageNum+1}", self.args["custom_content"])
-                customData = re.sub(r"\$", f"{self.completePageCount}", customData)
-                customData = re.sub(r"@", self.filename, customData)
+                custom_data = re.sub(r"#", f"{self.page_num+1}", self.args["custom_content"])
+                custom_data = re.sub(r"\$", f"{self.pagecount_complete}", custom_data)
+                custom_data = re.sub(r"@", self.filename, custom_data)
 
-                data = {"Source File Path" : filePath, "Source File Name" : self.filename, "Page Number (File)" : self.pageNum+1, 
-                                    "Page Number (Overall)" : self.completePageCount, "Word Count" : [self.pageWordCount], 
-                                    "Page Processing Duration" : f"{round(self.pageTime,3)} sec.", "Text" : [pageText], "Raw Text" : [pageBlob], "Process Timestamp" : time.asctime(),
-                                    self.args["custom_title"] : customData}
+                data = {
+                    "Source File Path" : filePath, 
+                    "Source File Name" : self.filename, 
+                    "Page Number (File)" : self.page_num+1, 
+                    "Page Number (Overall)" : self.pagecount_complete, 
+                    "Word Count" : [self.wordcount_page], 
+                    "Page Processing Duration" : f"{round(self.page_time,3)} sec.", 
+                    "Text" : [page_text], "Raw Text" : [page_blob], 
+                    "Process Timestamp" : time.asctime(),
+                    self.args["custom_title"] : custom_data
+                }
                 if self.args["tokenize_sentences"] or self.args["tokenize_words"]:
-                    sentenceCount = [i+1 for i in range(len(sentences))]
-                    sentenceWordCount = [len(s.words) for s in sentences]
-                    data["Sentence Number"] = sentenceCount
+                    sentence_count = [i+1 for i in range(len(sentences))]
+                    wordcount_sentence = [len(s.words) for s in sentences]
+                    data["Sentence Number"] = sentence_count
                     if self.args["tokenize_sentences"]:
-                        data["Word Count"] = sentenceWordCount
+                        data["Word Count"] = wordcount_sentence
                     data["Text"] = sentences
-                    data["Raw Text"] = sentencesBlob
+                    data["Raw Text"] = sentences_blob
                     if self.args["tokenize_words"]:
-                        wordIndex = list()
+                        word_index = list()
                         words = list()
-                        sentenceCounts = list()
+                        sentence_counts = list()
                         i = 1
                         for s in sentences:
-                            wordIndex += [i+1 for i in range(len(s.words))]
+                            word_index += [i+1 for i in range(len(s.words))]
                             words += s.words
-                            sentenceCounts += [i] * len(s.words)
+                            sentence_counts += [i] * len(s.words)
                             i += 1
 
-                        wordLen = [len(w) for w in words]
-                        data["Word Length"] = wordLen
+                        word_length = [len(w) for w in words]
+                        data["Word Length"] = word_length
                         data["Text"] = words
-                        data["Raw Text"] = wordsBlob
-                        data["Sentence Number"] = sentenceCounts
-                        data["Word Number"] = wordIndex
+                        data["Raw Text"] = words_blob
+                        data["Sentence Number"] = sentence_counts
+                        data["Word Number"] = word_index
                     
 
                 for i in range(len(data["Text"])):
-                    csvLine = list() # Build the output
+                    csv_line = list() # Build the output
                     for f in self.args["fields"]:
                         if f == "Raw Text":
                             if self.args["source_text"]:
-                                csvLine.append(data[f][i])
+                                csv_line.append(data[f][i])
                         else:
                             if type(data[f]) is list:
-                                csvLine.append(data[f][i])
+                                csv_line.append(data[f][i])
                             else:
-                                csvLine.append(data[f])
-                    pages.append(csvLine) # Add it to the list of page outputs for the file
+                                csv_line.append(data[f])
+                    pages.append(csv_line) # Add it to the list of page outputs for the file
                 self.dialog("page") # Update progress dialog
                 
                 
             else:
-                self.skippedPages = True
-                self.pageWordCount = 0
+                self.skipped_pages = True
+                self.wordcount_page = 0
                 self.dialog("pageskip")
 
         # Add each page from processed file to the output CSV as 1 line
-        with open(self.outputPath, "a", newline='') as outputFile:
+        with open(self.output_path, "a", newline='') as outputFile:
             outputCSVWriter = csv.writer(outputFile, dialect='excel')
             outputCSVWriter.writerows(pages)
         if self.args["report_file"] or (self.args["split"] and self.args["report"]):
@@ -704,12 +729,15 @@ class PDFtoCSV:
         self.dialog("fileEnd")  # Show user statistics for completed file
         self.pdf.close()    # Close the PDF
 
-        return self.totalWordCount
+        return self.wordcount_total
 
     # return an autocorrected version of source text
     def autocorrect(self, text, mode):
-        correctedText = ""
-        spelling = Spelling(path=BuildDict.customDictPath if os.path.exists(BuildDict.customDictPath) else BuildDict.refDictPath)
+        text_corrected = ""
+        spelling = Spelling(
+            path=BuildDict.path_custom_dict if os.path.exists(BuildDict.path_custom_dict) 
+            else BuildDict.path_ref_dict
+        )
         
         for w in [p.split("/")[0] for p in re.sub(r"\n", " ", text.parse()).split(" ")]:
             if True not in [True if c.isalnum() else False for c in w]:
@@ -720,31 +748,35 @@ class PDFtoCSV:
                 if not w.isalpha():
                     check = [(w, -2)]
                 else:
-                    lowerWord = w.lower()
-                    check = spelling.suggest(lowerWord)
+                    word_lowercase = w.lower()
+                    check = spelling.suggest(word_lowercase)
             corrected = check[0][0]
             if w.isupper():
                 corrected = corrected.upper()
             elif w.istitle():
                 corrected = corrected.title()
             if mode == "correct":
-                correctedText += separator + corrected
+                text_corrected += separator + corrected
                 if len(list(spelling._known([w.lower()]))) == 0 and check[0][1] > -1:
-                    self.correctedWords.append([w, True if check[0][1]>0 else False, corrected if check[0][1]>0 else "", check[0][1] if check[0][1]>0 else ""])
+                    self.words_corrected.append(
+                        [w, True if check[0][1]>0 else False, 
+                        corrected if check[0][1]>0 else "", 
+                        check[0][1] if check[0][1]>0 else ""]
+                    )
             elif mode == "remove":
                 if self.args["autocorrect"]:
                     if check[0][1] > 0 or check[0][1] == -1:
-                        correctedText += separator + corrected
+                        text_corrected += separator + corrected
                 else:
                     if len(list(spelling._known([w.lower()]))) != 0 or check[0][1] == -1:
-                        correctedText += separator + corrected
+                        text_corrected += separator + corrected
             
-        return correctedText.strip()
+        return text_corrected.strip()
 
     def corrections(self):
-        with open(self.correctionsPath, "a+", newline='') as outputFile:
-            outputCSVWriter = csv.writer(outputFile, dialect='excel')
-            outputCSVWriter.writerows(self.correctedWords)
+        with open(self.corrections_path, "a+", newline='') as output_file:
+            output_csv_writer = csv.writer(output_file, dialect='excel')
+            output_csv_writer.writerows(self.words_corrected)
 
     # Get the text from a single page
     def read_page(self, page):
@@ -756,34 +788,40 @@ class PDFtoCSV:
 
             if len(text) < 1:   # OCR the page if there is no text or if forced
                 if self.args["accelerated"]:  # Skip if Accelerated option active
-                    self.skippedPages = True
+                    self.skipped_pages = True
                 else:
                     text = self.ocr_page(page)
-                    if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
+                    if self.file_method == "text":    # If this is the first OCR page, tell the user what's going on
                         self.dialog("ocr")
-                    self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
-        text = self.cleanText(text) # Pass text through text cleaning processes
+                    self.file_method = "ocr" # Once one page is OCR, change the file method to OCR
+        text = self.clean_text(text) # Pass text through text cleaning processes
         return text
 
     def thorough_page(self,page):
-        if self.fileMethod == "text":    # If this is the first OCR page, tell the user what's going on
+        if self.file_method == "text":    # If this is the first OCR page, tell the user what's going on
             self.dialog("ocr")
-        self.fileMethod = "ocr" # Once one page is OCR, change the file method to OCR
+        self.file_method = "ocr" # Once one page is OCR, change the file method to OCR
         blocks = page.getText("dict", 0)["blocks"]
-        imgList = page.getImageList(full=True)
-        for i in imgList:
-            imgBBox = page.getImageBbox(i)
+        img_list = page.getImageList(full=True)
+        for i in img_list:
+            img_bbox = page.getImageBbox(i)
             self.tem_image_path()
-            imgDict = self.pdf.extractImage(i[0])
-            img = os.path.join(self.imgPath,"{}.{}".format(i[0], imgDict["ext"]))
-            imgout = open(img, "wb")
-            imgout.write(imgDict["image"])
-            imgout.close()
-            imgText = self.ocr(img)
-            if len(imgText) > 0 :
-                blocks.append({"type": 1, "bbox": imgBBox, "lines": [{"bbox":imgBBox, "spans": [{"bbox": imgBBox, "text":imgText}]}]})
+            img_dict = self.pdf.extractImage(i[0])
+            img = os.path.join(self.img_path,"{}.{}".format(i[0], img_dict["ext"]))
+            img_out = open(img, "wb")
+            img_out.write(img_dict["image"])
+            img_out.close()
+            img_text = self.ocr(img)
+            if len(img_text) > 0 :
+                blocks.append(
+                    {"type": 1, "bbox": img_bbox, "lines": 
+                        [{"bbox":img_bbox, "spans": 
+                            [{"bbox": img_bbox, "text":img_text}]
+                        }]
+                    }
+                )
         try:
-            rmtree(self.imgPath)
+            rmtree(self.img_path)
         except:
             pass
         spans = list()
@@ -798,23 +836,23 @@ class PDFtoCSV:
    
     def tem_image_path(self):
         # Create a temporary folder for the images used in OCR
-        self.imgPath = os.path.join(self.homePath,"tempImages")
+        self.img_path = os.path.join(self.homepath,"tempImages")
         try:
-            os.mkdir(self.imgPath)
+            os.mkdir(self.img_path)
         except:
             pass
 
     # Read a page using OCR
     def ocr_page(self, page):
         self.tem_image_path()
-        zoomMatrix = fitz.Matrix(3.2,3.2)   # Set the optimal settings for OCR-readable images
-        pix = page.getPixmap(matrix=zoomMatrix, colorspace=fitz.csGRAY, alpha=True) # Generate pixmap from PDF page
-        img = os.path.join(self.imgPath,"page-%i.png" % page.number) # find image in pixmap
+        zoom_matrix = fitz.Matrix(3.2,3.2)   # Set the optimal settings for OCR-readable images
+        pix = page.getPixmap(matrix=zoom_matrix, colorspace=fitz.csGRAY, alpha=True) # Generate pixmap from PDF page
+        img = os.path.join(self.img_path,"page-%i.png" % page.number) # find image in pixmap
         pix.writePNG(img)   # Grab image and save it
         
         text = self.ocr(img)
 
-        rmtree(self.imgPath) # Delete the temp folder for the pics
+        rmtree(self.img_path) # Delete the temp folder for the pics
                 
         return text
     
@@ -823,7 +861,8 @@ class PDFtoCSV:
         try:
             text = pytesseract.image_to_string(img, lang="eng", config="--psm 1")
         except:
-            print("\rSorry! There appears to be an issue with your Tesseract OCR installation. Please refer to the instruction manual for more details.")
+            print(("\rSorry! There appears to be an issue with your Tesseract OCR installation. "
+            "Please refer to the instruction manual for more details."))
             text = ""
         return text
 
@@ -831,17 +870,17 @@ class PDFtoCSV:
     def report(self):
         stats = {}
         # Clean the text for analysis
-        blob = TextBlob(self.reportText)
-        wordList = blob.words.lower()
-        text = " ".join(wordList)
+        blob = TextBlob(self.report_text)
+        wordlist = blob.words.lower()
+        text = " ".join(wordlist)
         
         text = self.edit_words(text, "report")
 
         blob = TextBlob(text)
-        posList = blob.tags
+        pos_list = blob.tags
 
         # Add words to the dictionary with a count of 1 or add one to count if word already counted
-        for w in posList:
+        for w in pos_list:
             if self.args["report_pos"]:
                 word = w
             else:
@@ -857,10 +896,13 @@ class PDFtoCSV:
             count += c[1]
 
         # sort stats alphabetically
-        sortedStats = [(word,count) for (word, count) in sorted(stats.items(),reverse= True, key=lambda x: x[1])]
+        stats_sorted = [
+            (word,count) for (word, count) in 
+            sorted(stats.items(),reverse= True, key=lambda x: x[1])
+        ]
 
         # trim words included based on the Report Limit argument
-        trimmedStats = {}
+        stats_trimmed = {}
 
         # get limit from arg, only numbers and %
         limit = re.sub(r"[^0-9%]", "", self.args["report_limit"])
@@ -880,104 +922,111 @@ class PDFtoCSV:
 
             # cutoff after instances have reached cutoff
             counter = 0
-            for w in sortedStats:
+            for w in stats_sorted:
                 counter += w[1]
                 if counter <= cieling or counter == w[1]:
-                    trimmedStats[w[0]]=w[1]            
+                    stats_trimmed[w[0]]=w[1]            
         
         # if not a percentile, return top x words 
         else:
             cieling = int(re.sub(r"[^0-9]", "", limit))
-            for w in sortedStats:
+            for w in stats_sorted:
                 if w[1] >= cieling:
-                    trimmedStats[w[0]]=w[1]
+                    stats_trimmed[w[0]]=w[1]
 
-        finalStats = list()
+        stats_final = list()
 
         # Sort words by frequency if Report Sort arg active, alphabetically if not
         if not self.args["report_sort"]:
-            finalStats = [(word[0],word[1], count) if type(word) is tuple else (word, count) for (word,count) in sorted(trimmedStats.items())]
+            stats_final = [
+                (word[0],word[1], count) if type(word) is tuple 
+                else (word, count) for (word,count) in sorted(stats_trimmed.items())
+            ]
         else:
-            finalStats = trimmedStats.items()
+            stats_final = stats_trimmed.items()
 
         # Write FR to file
-        with open(self.reportPath, "a", newline='') as outputFile:
-            outputCSVWriter = csv.writer(outputFile, dialect='excel')
+        with open(self.report_path, "a", newline='') as output_file:
+            output_csv_writer = csv.writer(output_file, dialect='excel')
 
             # Source changes based on if it is split or not
             if self.args["report"] and not self.args["split"]:
-                src = self.inputFilePath
+                src = self.input_filepath
             else:
                 src = self.filename
             
             # Header
-            outputCSVWriter.writerow(["Frequency Report of all words processed from {}".format(src)])  
+            output_csv_writer.writerow(["Frequency Report of all words processed from {}".format(src)])  
 
             # Secondary header if reporting by each page 
             if self.args["report_page"]:
-                outputCSVWriter.writerow(["{} page {}/{}".format(self.filename, self.pageNum+1, len(self.pdf))])
+                output_csv_writer.writerow(["{} page {}/{}".format(
+                    self.filename, 
+                    self.page_num+1, 
+                    len(self.pdf))]
+                )
             
             # Column headers
             headers = ["Word","Instances"]
             if self.args["report_pos"]:
                 headers.insert(1,"POS")
-            outputCSVWriter.writerow(headers)
+            output_csv_writer.writerow(headers)
 
             # Write output
-            for w in finalStats:
-                outputCSVWriter.writerow(w)
+            for w in stats_final:
+                output_csv_writer.writerow(w)
         
         # Reset report text
-        self.reportText = ""
+        self.report_text = ""
 
     # Edit the text for the Ignore or Only options of either the Report or Process functions
     def edit_words(self, text, purpose):
-        stopWordsPath = os.path.join(self.homePath, "options", "StopWords.txt")
-        reportIgnorePath = os.path.join(self.homePath, "options", "ReportIgnore.txt")
-        reportOnlyPath = os.path.join(self.homePath, "options", "ReportOnly.txt")
-        processIgnorePath = os.path.join(self.homePath, "options", "ProcessIgnore.txt")
-        processOnlyPath = os.path.join(self.homePath, "options", "ProcessOnly.txt")
+        stopwords_path = os.path.join(self.homepath, "options", "StopWords.txt")
+        report_ignore_path = os.path.join(self.homepath, "options", "ReportIgnore.txt")
+        report_only_path = os.path.join(self.homepath, "options", "ReportOnly.txt")
+        process_ignore_path = os.path.join(self.homepath, "options", "ProcessIgnore.txt")
+        process_only_path = os.path.join(self.homepath, "options", "ProcessOnly.txt")
         if purpose == "report":
-            ignorePath = reportIgnorePath
-            onlyPath = reportOnlyPath
-            ignoreList = self.args["report_ignore"]
-            onlyList = self.args["report_only"]
+            ignore_path = report_ignore_path
+            only_path = report_only_path
+            ignore_list = self.args["report_ignore"]
+            only_list = self.args["report_only"]
         elif purpose == "process":
-            ignorePath = processIgnorePath
-            onlyPath = processOnlyPath
-            ignoreList = self.args["process_ignore"]
-            onlyList = self.args["process_only"]
+            ignore_path = process_ignore_path
+            only_path = process_only_path
+            ignore_list = self.args["process_ignore"]
+            only_list = self.args["process_only"]
 
         # Remove all but specified words if Report Only arg is used
-        if onlyList is not None:
+        if only_list is not None:
             # If no words given, pull from file
-            if len(onlyList) < 1:
-                onlyList.append(onlyPath)
+            if len(only_list) < 1:
+                only_list.append(only_path)
             
             # Turn strings from CL or file into regex patterns
-            patterns = self.get_pattern(onlyList)
-            oldText = text
+            patterns = self.get_pattern(only_list)
+            text_old = text
             text = ""
             # Only include specified words
             for pattern in patterns:
-                matches  = re.findall(r"\b{}\b".format(pattern), oldText, flags=re.IGNORECASE)
+                matches  = re.findall(r"\b{}\b".format(pattern), text_old, flags=re.IGNORECASE)
                 for match in matches:
                     text += match + " "
 
         # Remove specified words if Report Ignore arg is used
-        if ignoreList is not None:
+        if ignore_list is not None:
 
             # If no words given, pull from file
-            if len(ignoreList) < 1:
-                with open(ignorePath, "r") as f:
+            if len(ignore_list) < 1:
+                with open(ignore_path, "r") as f:
                     if len([line for line in f if line[0] !="#"]) == 0:
-                        ignoreList = [stopWordsPath] 
+                        ignore_list = [stopwords_path] 
                     else:
-                        ignoreList = [ignorePath]
+                        ignore_list = [ignore_path]
     
 
             # Turn strings from CL or file into regex patterns
-            patterns = self.get_pattern(ignoreList)
+            patterns = self.get_pattern(ignore_list)
 
             # Remove specified words
             for pattern in patterns:
@@ -1005,46 +1054,46 @@ class PDFtoCSV:
 
     # Strip unneceesary whitespace
     def strip_whitespace(self, text):
-        newText = ""
+        text_new = ""
         for c in text.group(0):
             if not re.match(r"\s", c):
-                newText += c
-        newText += " "
-        return newText
+                text_new += c
+        text_new += " "
+        return text_new
 
     # Process text to format it to be human-readable on one CSV line and fix common OCR errors
-    def cleanText(self, rawText):
+    def clean_text(self, text_raw):
 
         # make all space (inluding line breaks) into standard spaces
-        cleanText = re.sub(r"\s", " ", rawText)
+        text_clean = re.sub(r"\s", " ", text_raw)
 
         # Strip accents and convert unicode symbols to ascii and transliterate non-latin characters
-        cleanText = unidecode.unidecode(cleanText)
+        text_clean = unidecode.unidecode(text_clean)
 
         # make all apostrophes the same
-        cleanText = re.sub(r"[‘’‚‛′`']", r"'", cleanText)
+        text_clean = re.sub(r"[‘’‚‛′`']", r"'", text_clean)
 
         #connect hyphenated line breaks
-        cleanText = re.sub(r"\S-\s+", lambda x: x.group(0)[0], cleanText)
+        text_clean = re.sub(r"\S-\s+", lambda x: x.group(0)[0], text_clean)
 
         # Remove non-grammatical punctuation
-        cleanText = re.sub(r'''[^a-zA-Z0-9' .;,"$/@!?&\-()_]''', r"", cleanText)
+        text_clean = re.sub(r'''[^a-zA-Z0-9' .;,"$/@!?&\-()_]''', r"", text_clean)
 
         # clean words split up by spaces
-        cleanText = re.sub(r"(\b\w\s)+", self.strip_whitespace, cleanText)
+        text_clean = re.sub(r"(\b\w\s)+", self.strip_whitespace, text_clean)
 
         # fix spaces
-        cleanText = re.sub(r"\s+", " ", cleanText)
-        cleanText = re.sub(r"\s[.,;]", lambda x: x.group(0)[1], cleanText)
+        text_clean = re.sub(r"\s+", " ", text_clean)
+        text_clean = re.sub(r"\s[.,;]", lambda x: x.group(0)[1], text_clean)
 
         # common splits
-        cleanText = re.sub(r"(?i)\bt\s?h\s?e\b", lambda x: x.group(0)[0]+"he", cleanText)
-        cleanText = re.sub(r"\ba\s?n\s?d\b", lambda x: x.group(0)[0]+"nd", cleanText)
+        text_clean = re.sub(r"(?i)\bt\s?h\s?e\b", lambda x: x.group(0)[0]+"he", text_clean)
+        text_clean = re.sub(r"\ba\s?n\s?d\b", lambda x: x.group(0)[0]+"nd", text_clean)
 
         # remove leading and trailing spaces
-        cleanText = cleanText.strip()
+        text_clean = text_clean.strip()
 
-        return cleanText
+        return text_clean
 
     def lemmatize(self, text):
         blob = TextBlob(text)
@@ -1065,32 +1114,63 @@ class PDFtoCSV:
     def dialog(self, stage):
 
         # Only show beginning and ending dialog if it is a dir (otherwise the file beginning and ending dialoge is enough)
-        if self.inputType == "dir":
+        if self.input_type == "dir":
 
             # Determine plural ending
-            if len(self.pathList) == 1:
+            if len(self.path_list) == 1:
                 plural = ""
             else:
                 plural = "s"
             
             if stage == "start":    # Starting dialogue
                 if not self.args["quiet"]:
-                    print("Processing all PDF files in folder {} ({} File{})".format(self.inputFilePath, len(self.pathList), plural))
+                    print("Processing all PDF files in folder {} ({} File{})".format(
+                        self.input_filepath, 
+                        len(self.path_list), plural
+                    ))
                 self.dirTimeStart = time.perf_counter() # Record starting time
             elif stage == "end":    # Ending dialogue
                 dirTimeEnd = time.perf_counter()   # Record ending time
-                dirTime = round(dirTimeEnd-self.dirTimeStart, 3)  # Calculate processing time
+                dir_time = round(dirTimeEnd-self.dirTimeStart, 3)  # Calculate processing time
                 if not self.args["quiet"]:
                     print()
                     if not self.args["split"]:
-                        print("The file {} contains all of the text extracted from from all PDF files in {}.".format(self.outputPath, self.inputFilePath))
-                        if self.args["report"] or self.args["report_file"] or self.args["report_page"]:
-                            print("The file {} contains a frequency report of all words processed.".format(self.reportPath))
+                        print(
+                            ("The file {} contains all of the text extracted "
+                            "from from all PDF files in {}.").format(
+                                self.output_path, 
+                                self.input_filepath
+                            )
+                        )
+                        if (self.args["report"] or 
+                            self.args["report_file"] or 
+                            self.args["report_page"]):
+                            print(
+                                ("The file {} contains a frequency report "
+                                "of all words processed.").format(self.report_path))
                     else:
-                        print("Each file in {} has breen processed and the extracted text is contained in the accompanying CSV file.".format(self.inputFilePath))
-                        if self.args["report"] or self.args["report_file"] or self.args["report_page"]:
-                            print("Each file also contains an accompanying CSV file with a frequency report of each word processed.")
-                    print("{} file{} ({} words) were processed in {} seconds. That is an average of {} seconds/file".format(len(self.pathList), plural, self.completeWordCount, dirTime, round(dirTime/len(self.pathList),3)))
+                        print(
+                            ("Each file in {} has breen processed and "
+                            "the extracted text is contained in the "
+                            "accompanying CSV file.").format(self.input_filepath)
+                        )
+                        if (self.args["report"] or 
+                            self.args["report_file"] or 
+                            self.args["report_page"]):
+                            print(
+                                ("Each file also contains an accompanying "
+                                "CSV file with a frequency report of each word processed.")
+                            )
+                    print(
+                        ("{} file{} ({} words) were processed in {} seconds. "
+                        "That is an average of {} seconds/file").format(
+                            len(self.path_list), 
+                            plural, 
+                            self.complete_wordcount, 
+                            dir_time, 
+                            round(dir_time/len(self.path_list),3)
+                        )
+                    )
         
         if stage[:4] == "file":    # The dialog relates to the processing of the file
             if len(self.pdf) == 1:  # Determine plural ending
@@ -1111,14 +1191,26 @@ class PDFtoCSV:
                     pagesProcessed = len(self.args["pages"])
                 else:
                     pagesProcessed = len(self.pdf)
-                if not self.args["quiet"] or self.inputType != "dir":
-                    print("Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(self.filename, fileTime, pagesProcessed, plural, self.totalWordCount, round(fileTime/pagesProcessed,3)))
-                if self.skippedPages and not self.args["quiet"]:
+                if not self.args["quiet"] or self.input_type != "dir":
+                    print(
+                        "Completed {} in {} seconds ({} page{}, {} words, {} seconds/page)".format(
+                            self.filename, 
+                            fileTime, 
+                            pagesProcessed, 
+                            plural, 
+                            self.wordcount_total, 
+                            round(fileTime/pagesProcessed,3)
+                        )
+                    )
+                if self.skipped_pages and not self.args["quiet"]:
                     if self.args["accelerated"]:
                         reason = "Accellerated Mode"
                     if len(self.args["pages"]) > 0:
                         reason = "to only process certain pages"
-                    print("Some pages were skipped because you chose {}. See Guide for details.".format(reason))
+                    print(
+                        ("Some pages were skipped because you chose {}. "
+                        "See Guide for details.").format(reason)
+                    )
        
         if not self.args["quiet"]:
             if stage == "ocr":  # Explain to the user that we are now dealing with OCR and why
@@ -1126,12 +1218,15 @@ class PDFtoCSV:
                     reason = "Thorough Mode has been chosen, see Guide for details."
                 else:
                     reason = "it contains non-machine readable text."
-                print("\rThis file is being processed with OCR because {} \n(This may take a few seconds per page)".format(reason))
+                print(
+                    ("\rThis file is being processed with OCR because {} "
+                    "\n(This may take a few seconds per page)").format(reason)
+                )
 
             if stage[:4] == "page":
-                if self.pageNum >= self.percent:    # If we passed the next percentage marker, set a new one
+                if self.page_num >= self.percent:    # If we passed the next percentage marker, set a new one
                     self.percent = self.percent + self.fivePercent
-                if self.fileMethod == "ocr" or self.args["verbose"]:    # Because OCR takes longer, give an update of time and words after each page
+                if self.file_method == "ocr" or self.args["verbose"]:    # Because OCR takes longer, give an update of time and words after each page
                     if self.args["verbose"]:
                         lead = ""
                         rtn = "\n"
@@ -1139,14 +1234,32 @@ class PDFtoCSV:
                         lead = "\r"
                         rtn = ""
                     if len(stage) == 4:
-                        print("{}Read {} words from page {}/{} in {} seconds        ".format(lead,self.pageWordCount, self.pageNum+1, len(self.pdf), round(time.perf_counter()-self.pageStart,3)), end=rtn, flush=True)
+                        print(
+                            "{}Read {} words from page {}/{} in {} seconds        ".format(
+                                lead,
+                                self.wordcount_page, 
+                                self.page_num+1, 
+                                len(self.pdf), 
+                                round(time.perf_counter()-self.page_start,3)
+                            ), 
+                            end=rtn, 
+                            flush=True
+                        )
                     else:
-                        print("{}Page {}/{} skipped as it was not among those specified.    ".format(lead, self.pageNum+1, len(self.pdf)), end=rtn, flush=True)
+                        print(
+                            "{}Page {}/{} skipped as it was not among those specified.    ".format(
+                                lead, 
+                                self.page_num+1, 
+                                len(self.pdf)
+                            ), 
+                            end=rtn, 
+                            flush=True
+                        )
                 else:   # For text, just update the progress bar
-                    if self.pageNum >= self.percent:    # If we passed the next percentage marker, print a marker set a new one
+                    if self.page_num >= self.percent:    # If we passed the next percentage marker, print a marker set a new one
                         print("=", end="", flush=True)
                         self.percent = self.percent + self.fivePercent
-                if self.pageNum+1 == len(self.pdf) and not self.args["verbose"]: # If we are at the end of the file, ensure there is a full progress bar
+                if self.page_num+1 == len(self.pdf) and not self.args["verbose"]: # If we are at the end of the file, ensure there is a full progress bar
                     print("\rProgress: 0%|====================|100%                ")
 
     # Error dialog
