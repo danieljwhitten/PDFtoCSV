@@ -379,6 +379,8 @@ class ReadPDF:
 
 
         except IOError as err:
+            end_time = time.perf_counter()
+            self.time = end_time-start_time
             self.error_found(err)
             
     # Check to see if Tesseract OCR has been installed as per README
