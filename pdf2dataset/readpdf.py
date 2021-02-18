@@ -1,14 +1,21 @@
-import os
-import re
-import fitz
-import pytesseract
-import csv
-import time
-import sys
-import unidecode
-import argparse
-import math
-import tempfile
+#     datasets-from-pdfs - Convert single or mass PDFs to datasets
+#     Copyright (C) 2021  Daniel Whitten - danieljwhitten@gmail.com
+
+#     This program is free software: you can redistribute it and/or modify
+#     it under the terms of the GNU General Public License as published by
+#     the Free Software Foundation, either version 3 of the License, or
+#     (at your option) any later version.
+
+#     This program is distributed in the hope that it will be useful,
+#     but WITHOUT ANY WARRANTY; without even the implied warranty of
+#     MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#     GNU General Public License for more details.
+
+#     You should have received a copy of the GNU General Public License
+#     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+import os, re, csv, time, sys, argparse, math, tempfile
+import fitz, pytesseract, unidecode
 from natsort import natsorted
 from textblob import TextBlob
 from textblob import Word
