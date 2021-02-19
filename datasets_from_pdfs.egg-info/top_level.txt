@@ -1,1 +1,1 @@
-pdf2dataset
+datasets_from_pdfs

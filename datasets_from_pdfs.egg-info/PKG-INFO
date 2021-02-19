@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: datasets-from-pdfs
-Version: 0.0.1
+Version: 0.0.7
 Summary: ('A tool to convert single or mass PDFs to datasets for', 'language analysis, including a toolbox of text and NLP pre-processing options')
 Home-page: https://github.com/danieljwhitten/datasets-from-pdfs
 Author: Daniel Whitten

@@ -21,7 +21,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="datasets-from-pdfs",
-    version="0.0.1",
+    version="0.0.7",
     author="Daniel Whitten",
     author_email="danieljwhitten@gmail.com",
     description=("A tool to convert single or mass PDFs to datasets for",
@@ -36,4 +36,9 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
+    entry_points={
+        "console_scripts": [
+            "datasets-from-pdfs = datasets_from_pdfs.readpdf:main"
+        ]
+    },
 )

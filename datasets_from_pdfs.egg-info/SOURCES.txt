@@ -1,9 +1,10 @@
 README.md
 setup.py
+datasets_from_pdfs/__init__.py
+datasets_from_pdfs/build_dictionary.py
+datasets_from_pdfs/readpdf.py
 datasets_from_pdfs.egg-info/PKG-INFO
 datasets_from_pdfs.egg-info/SOURCES.txt
 datasets_from_pdfs.egg-info/dependency_links.txt
+datasets_from_pdfs.egg-info/entry_points.txt
 datasets_from_pdfs.egg-info/top_level.txt
-pdf2dataset/__init__.py
-pdf2dataset/build_dictionary.py
-pdf2dataset/readpdf.py

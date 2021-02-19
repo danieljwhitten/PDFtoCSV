@@ -1,0 +1,3 @@
+[console_scripts]
+datasets-from-pdfs = datasets_from_pdfs.readpdf:main
+

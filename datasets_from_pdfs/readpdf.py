@@ -20,7 +20,7 @@ from natsort import natsorted
 from textblob import TextBlob
 from textblob import Word
 from textblob.en import Spelling
-from build_dictionary import BuildDict
+from .build_dictionary import BuildDict
 
 """ A class with the tools to translate a set of PDF files into a single CSV file using embedded text and OCR"""
 
@@ -348,10 +348,12 @@ class Arguments:
         if __name__ == "__main__":
             self.args=vars(parser.parse_args())
         else:
+            print(user_args)
             args_split = [
                 re.sub(r'"','', phrase) for phrase in 
                 re.findall(r'([\w\-]+|".*?")', user_args)
             ]
+            print(args_split)
             self.args = vars(parser.parse_args(args_split))
 
 class ReadPDF:            
@@ -718,7 +720,7 @@ class ProcessPDF(ReadPDF):
                 self.args["report_page"]
             ]):
                 writer.write_report()
-            if processed.args["corrections"]:
+            if self.args["corrections"]:
                 writer.write_corrections()
 class FileProcessed(File):
     def __init__(self, file_path, dialog, **args):
@@ -1604,7 +1606,10 @@ class ProgressOutput:
                 )
             )
 
-if __name__ == "__main__":
+def main():
     processed = ProcessPDF()
     processed.write()
     processed.dialog.complete()
+
+if __name__ == "__main__":
+    main()
